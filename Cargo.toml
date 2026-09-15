@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 phenopackets = "0.2.2-post2"
 prost = "0.14.4"
+
+[dev-dependencies]
+tempfile = "3"

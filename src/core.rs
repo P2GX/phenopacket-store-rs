@@ -38,6 +38,12 @@ impl From<IoError> for PhenoStoreError {
         match error.kind() {
             IoErrorKind::AlreadyExists => Self::AlreadyExists,
             IoErrorKind::NotFound => Self::NotFound,
+            IoErrorKind::InvalidData => Self::InvalidData,
+            IoErrorKind::InvalidInput => Self::InvalidInput,
+
+            IoErrorKind::PermissionDenied => Self::Storage(StorageError::PermissionDenied),
+            //TODO: add other storage errors
+
             _ => Self::Other,
         }
     }
@@ -78,7 +84,7 @@ impl FilePhenoStore {
     }
 
     /// returns the path for a pb file based on the id. Does NOT check whether the file actually exists, this just implements the naming convention.
-    pub fn get_phenopacket_path(&self, id: &Uuid) -> PathBuf {
+    fn get_phenopacket_path(&self, id: &Uuid) -> PathBuf {
         self.dir.join(format!("{id}.pb"))
     }
 
@@ -152,14 +158,14 @@ fn read_phenopacket(path: &Path) -> Result<Phenopacket, PhenoStoreError> {
     let mut file = File::open(path)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
-    Ok(Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::InvalidData)?)
+    Ok(Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::Storage(StorageError::Corrupted))?)
 }
 
-/// create a new phenopacket at the specified path
-fn create_phenopacket(phenopacket: &Phenopacket, path: &Path) -> std::io::Result<()> {
+/// create a new protobuf file at the specified path
+fn write_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
     let mut file = File::create(path)?;
     let mut buf = Vec::new();
-    phenopacket.encode(&mut buf)?;
+    phenopacket.encode(&mut buf).map_err(|_| PhenoStoreError::InvalidData)?;
     file.write_all(&buf)?;
 
     Ok(())
@@ -173,8 +179,8 @@ fn delete_phenopacket(path: &Path) -> Result<(), PhenoStoreError> {
 
 /// replace phenopacket at the specified path
 fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    let tmp_file = tempfile::NamedTempFile::new()?;
-    create_phenopacket(phenopacket, &tmp_file.path())?;
+    let tmp_file = tempfile::NamedTempFile::new_in(path.parent().ok_or(PhenoStoreError::InvalidInput)? )?;
+    write_phenopacket(phenopacket, &tmp_file.path())?;
     fs::rename(tmp_file, path)?;
 
     Ok(())
@@ -242,7 +248,7 @@ mod test_core {
 
         // write
         let outfile = tempfile::NamedTempFile::new()?;
-        create_phenopacket(&pp_read, &outfile.path())?;
+        write_phenopacket(&pp_read, &outfile.path())?;
         assert!(!std::fs::metadata(outfile.path())?.len() > 0);
 
         // read again to check persistence
@@ -380,7 +386,7 @@ mod test_file_pheno_store {
         let mut corrupted_file = fs::File::create_new(ps.dir.join(format!("{id_corrupted_file}.pb")))?;
         let _ = write!(corrupted_file, "ohno this file is corrupted and does not contain valid pb data :(");
         let test_fail = ps.get(&id_corrupted_file);
-        assert_matches!(test_fail, Err(PhenoStoreError::InvalidData));
+        assert_matches!(test_fail, Err(PhenoStoreError::Storage(StorageError::Corrupted)));
 
         Ok(())
     }

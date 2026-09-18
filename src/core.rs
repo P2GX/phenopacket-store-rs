@@ -5,7 +5,6 @@ use uuid::Uuid;
 use phenopackets::schema::v2::Phenopacket;
 use prost::Message;
 
-
 /// The error returned when a non-normal execution happens, e.g. network connectivity issue,
 /// but not when a phenopacket is searched and not found.
 #[derive(Debug)]
@@ -56,11 +55,11 @@ pub trait PhenoStore {
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError>;
 }
 
-pub struct FilePhenoStore {
-    dir: PathBuf,
+pub struct FilePhenoStore<P> {
+    dir: P,
 }
 
-impl FilePhenoStore {
+impl<P> FilePhenoStore<P> where P: AsRef<Path>{
 
     /// Initiate a new File-based Phenopackets Store at given location.
     /// 
@@ -68,9 +67,9 @@ impl FilePhenoStore {
     /// 
     /// Errors:
     ///   - DirectoryNotEmpty: if a dir already exists at `path` and is not empty
-    pub fn new(path: &Path) -> Result<FilePhenoStore, PhenoStoreError> {
-        //TODO: allow more types for path maybe via AsRef?
-        let path = PathBuf::from(&path);
+    pub fn new(path: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
+        // TODO: allow more types for path maybe via AsRef?
+        // let path = PathBuf::from(path);
         fs::create_dir_all(&path)?;
         if fs::read_dir(&path)?.next().is_some() { return Err(PhenoStoreError::Storage(StorageError::Initialization)); }
         
@@ -78,18 +77,18 @@ impl FilePhenoStore {
     }
 
     /// Create a file-based Phenopackets Store from a directory of phenopacket files
-    pub fn open(dir: &Path) -> Result<FilePhenoStore, PhenoStoreError> {
-        let store_root = PathBuf::from(dir);
-        Ok(FilePhenoStore { dir: store_root })
+    pub fn open(dir: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
+        // let store_root = PathBuf::from(dir);
+        Ok(FilePhenoStore { dir })
     }
 
     /// returns the path for a pb file based on the id. Does NOT check whether the file actually exists, this just implements the naming convention.
     fn get_phenopacket_path(&self, id: &Uuid) -> PathBuf {
-        self.dir.join(format!("{id}.pb"))
+        self.dir.as_ref().join(format!("{id}.pb"))
     }
 
     pub fn ls(&self) -> Result<Vec<std::fs::DirEntry>, PhenoStoreError> {
-        Ok(self.dir.read_dir()?
+        Ok(self.dir.as_ref().read_dir()?
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "pb"))
@@ -98,7 +97,7 @@ impl FilePhenoStore {
     }
 
     pub fn len(&self) -> Result<usize, PhenoStoreError> {
-        Ok(self.dir.read_dir()?
+        Ok(self.dir.as_ref().read_dir()?
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "pb"))
@@ -106,33 +105,32 @@ impl FilePhenoStore {
         )
     }
 
+    pub fn is_empty(&self) -> Result<bool, PhenoStoreError> {
+        Ok(self.ls().iter().len() == 0)
+    }
+
 }
 
-impl PhenoStore for FilePhenoStore {
+impl<P> PhenoStore for FilePhenoStore<P> where P: AsRef<Path> {
     /// add a Phenopacket to the store
     /// 
     /// writes a file and uses the id as filename. This is a store id and independent of any id contained in the phenopacket
     fn add(&self, phenopacket: &Phenopacket) -> Result<Uuid, PhenoStoreError> {
         let id = Uuid::new_v4();
-
-        let mut file = File::create_new(&self.get_phenopacket_path(&id))?;
-        let mut buf = Vec::new();
-        phenopacket.encode(&mut buf)
-            .map_err(|_| PhenoStoreError::InvalidData)?;
-        file.write_all(&buf)?;
+        write_phenopacket(phenopacket, &self.get_phenopacket_path(&id))?;
 
         Ok(id)
     }
 
     fn remove(&self, id: &Uuid) -> Result<(), PhenoStoreError> {
-        let path = self.get_phenopacket_path(&id);
+        let path = self.get_phenopacket_path(id);
         delete_phenopacket(&path)
     }
 
     /// retrieve a phenopacket from its id, if it exists
     /// returns Ok(None) If given valid id, but not found.
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError> {
-        let path = self.get_phenopacket_path(&id);
+        let path = self.get_phenopacket_path(id);
         match read_phenopacket(&path) {
             Ok(phenopacket) => Ok(Some(phenopacket)),
             Err(PhenoStoreError::NotFound) => Ok(None),
@@ -142,7 +140,7 @@ impl PhenoStore for FilePhenoStore {
 
     /// If a phenopacket is updated, the previous state is gone. It is not the responsibility of this code to keep track of everything.
     fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<(), PhenoStoreError> {
-        let pp_path = self.get_phenopacket_path(&id);
+        let pp_path = self.get_phenopacket_path(id);
 
         match self.get(id)? {
             Some(_) => replace_phenopacket(phenopacket, &pp_path),
@@ -158,14 +156,15 @@ fn read_phenopacket(path: &Path) -> Result<Phenopacket, PhenoStoreError> {
     let mut file = File::open(path)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
-    Ok(Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::Storage(StorageError::Corrupted))?)
+    Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::Storage(StorageError::Corrupted))
 }
 
 /// create a new protobuf file at the specified path
 fn write_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    let mut file = File::create(path)?;
+    // study "encoded_len" to prevent Vec reallocations.
     let mut buf = Vec::new();
-    phenopacket.encode(&mut buf).map_err(|_| PhenoStoreError::InvalidData)?;
+    phenopacket.encode(&mut buf).expect("we expect enough memory to store a phenopacket.");
+    let mut file = File::create(path)?;
     file.write_all(&buf)?;
 
     Ok(())
@@ -179,9 +178,13 @@ fn delete_phenopacket(path: &Path) -> Result<(), PhenoStoreError> {
 
 /// replace phenopacket at the specified path
 fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    let tmp_file = tempfile::NamedTempFile::new_in(path.parent().ok_or(PhenoStoreError::InvalidInput)? )?;
-    write_phenopacket(phenopacket, &tmp_file.path())?;
-    fs::rename(tmp_file, path)?;
+    // let tmp_file = tempfile::NamedTempFile::new()?; //new_in(path.parent().ok_or(PhenoStoreError::InvalidInput)? )?;
+    let tmp_file = path.with_extension("_tmp");
+    write_phenopacket(phenopacket, &tmp_file)?;
+    fs::rename(&tmp_file, path).map_err(|error| {
+        let _ = fs::remove_file(&tmp_file);
+        PhenoStoreError::from(error)
+    })?;
 
     Ok(())
 }
@@ -213,11 +216,11 @@ mod testutils {
 
     /// create an empty example store in a temporary directory
     /// the TempDir needs to be returned and kept alive a long as you want to use the store, otherwise the dir is removed.
-    pub fn example_store_empty() -> Result<(tempfile::TempDir, FilePhenoStore), PhenoStoreError> {
+    pub fn example_store_empty() -> Result<FilePhenoStore<tempfile::TempDir>, PhenoStoreError> {
         let temp_dir = tempfile::TempDir::new()?;
         assert!(temp_dir.path().exists(), "failed to create temp dir");
-        let ps = FilePhenoStore::new(temp_dir.path())?;
-        Ok((temp_dir, ps))
+        let ps = FilePhenoStore::new(temp_dir)?;
+        Ok(ps)
     }
 }
 
@@ -307,7 +310,7 @@ mod test_file_pheno_store {
         let store = FilePhenoStore::new(&store_path)?;
 
         assert!(store.dir.is_dir());
-        assert_eq!(store_path, store.dir);
+        assert_eq!(&store_path, store.dir);
         //TODO: assert store is empty
         Ok(())
     }
@@ -327,7 +330,7 @@ mod test_file_pheno_store {
     fn test_open() -> Result<(), PhenoStoreError> {
         let temp_dir = tempfile::TempDir::new()?;
         let ps = FilePhenoStore::open(temp_dir.path())?;
-        assert_eq!(temp_dir.path(), ps.dir.as_path(), "failed to set the store directory.");
+        assert_eq!(temp_dir.path(), ps.dir, "failed to set the store directory.");
         Ok(())
     }
     
@@ -340,7 +343,7 @@ mod test_file_pheno_store {
         
         // is ps dir non empty now?
         assert!(ps.dir.read_dir()?.next().is_some(), "failed to add a pb file to PhenoStore directory.");
-        assert!(ps.dir.join(format!("{id}.pb")).exists());
+        assert!(ps.get_phenopacket_path(&id).exists());
         Ok(())
     }
 
@@ -348,14 +351,14 @@ mod test_file_pheno_store {
     /// depends on add()
     fn test_remove() -> Result<(), PhenoStoreError> {
         // setup
-        let (_tmpdir, ps) = testutils::example_store_empty()?;
+        let ps = testutils::example_store_empty()?;
 
         // successfully remove a stored phenopacket
         let pp = testutils::example_phenopacket()?;
         let id = ps.add(&pp)?;
         let test_exists = ps.remove(&id);
         assert_matches!(test_exists, Ok(_));
-        assert!(!ps.dir.join(format!("{id}.pb")).exists(), "pb file to delete still exists.");
+        assert!(!ps.get_phenopacket_path(&id).exists(), "pb file to delete still exists.");
         // assert!(ps.dir.read_dir().ter().next().is_none(), "store dir not empty");
 
         // try to remove non existent
@@ -383,7 +386,7 @@ mod test_file_pheno_store {
         
         // valid id and file name, but corrupted contents (not valid phenopacket)
         let id_corrupted_file = Uuid::new_v4();
-        let mut corrupted_file = fs::File::create_new(ps.dir.join(format!("{id_corrupted_file}.pb")))?;
+        let mut corrupted_file = fs::File::create_new(ps.get_phenopacket_path(&id_corrupted_file))?;
         let _ = write!(corrupted_file, "ohno this file is corrupted and does not contain valid pb data :(");
         let test_fail = ps.get(&id_corrupted_file);
         assert_matches!(test_fail, Err(PhenoStoreError::Storage(StorageError::Corrupted)));
@@ -394,7 +397,7 @@ mod test_file_pheno_store {
 
     #[test]
     fn test_len() -> Result<(), PhenoStoreError> {
-        let (_tmpdir, ps) = testutils::example_store_empty().expect("failed to set up test pheno store");
+        let ps = testutils::example_store_empty().expect("failed to set up test pheno store");
         let len0 = ps.len()?;
 
         let pp1 = testutils::example_phenopacket()?;

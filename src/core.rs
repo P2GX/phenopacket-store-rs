@@ -41,6 +41,7 @@ impl From<IoError> for PhenoStoreError {
             IoErrorKind::InvalidInput => Self::InvalidInput,
 
             IoErrorKind::PermissionDenied => Self::Storage(StorageError::PermissionDenied),
+            IoErrorKind::ReadOnlyFilesystem => Self::Storage(StorageError::ReadOnly),
             //TODO: add other storage errors
 
             _ => Self::Other,
@@ -66,20 +67,20 @@ impl<P> FilePhenoStore<P> where P: AsRef<Path>{
     /// Will create an empty folder at the specified path to store phenopackets.
     /// 
     /// Errors:
-    ///   - DirectoryNotEmpty: if a dir already exists at `path` and is not empty
+    ///   - PhenoStoreError::Storage(StorageError::Initialization) : if the directory could not be created or is not empty
     pub fn new(path: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
-        // TODO: allow more types for path maybe via AsRef?
-        // let path = PathBuf::from(path);
         fs::create_dir_all(&path)?;
         if fs::read_dir(&path)?.next().is_some() { return Err(PhenoStoreError::Storage(StorageError::Initialization)); }
         
         Ok(FilePhenoStore{dir: path})
     }
 
-    /// Create a file-based Phenopackets Store from a directory of phenopacket files
+    /// Create a file-based Phenopackets Store from an existing directory of phenopacket files
     pub fn open(dir: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
-        // let store_root = PathBuf::from(dir);
-        Ok(FilePhenoStore { dir })
+        match fs::read_dir(&dir) {
+            Ok(_) => Ok(FilePhenoStore { dir }),
+            Err(e) => Err(PhenoStoreError::from(e)),
+        }
     }
 
     /// returns the path for a pb file based on the id. Does NOT check whether the file actually exists, this just implements the naming convention.

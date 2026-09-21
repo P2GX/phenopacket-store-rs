@@ -1,4 +1,4 @@
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::{error::Error};
 use uuid::Uuid;
 
 use phenopackets::schema::v2::Phenopacket;
@@ -10,38 +10,33 @@ use phenopackets::schema::v2::Phenopacket;
 pub enum PhenoStoreError {
     NotFound,
     AlreadyExists,
-    InvalidInput,
     InvalidData,
 
-    Storage(StorageError),
+    Io(IoErrorKind),
 
-    Other,
+    Other(Box<dyn Error + Send + Sync>),
 }
 
 #[derive(Debug)]
-pub enum StorageError {
+pub enum IoErrorKind {
     PermissionDenied,
     ReadOnly,
     CapacityExceeded,
-    Unavailable,
     Timeout,
     Initialization,
-    Corrupted,
-    Other,
 }
 
-impl From<IoError> for PhenoStoreError {
-    fn from(error: IoError) -> Self {
+impl From<std::io::Error> for PhenoStoreError {
+    fn from(error: std::io::Error) -> Self {
         match error.kind() {
-            IoErrorKind::AlreadyExists => Self::AlreadyExists,
-            IoErrorKind::NotFound => Self::NotFound,
-            IoErrorKind::InvalidData => Self::InvalidData,
-            IoErrorKind::InvalidInput => Self::InvalidInput,
+            std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
+            std::io::ErrorKind::NotFound => Self::NotFound,
+            std::io::ErrorKind::InvalidData => Self::InvalidData,
 
-            IoErrorKind::PermissionDenied => Self::Storage(StorageError::PermissionDenied),
-            IoErrorKind::ReadOnlyFilesystem => Self::Storage(StorageError::ReadOnly),
-            //TODO: add other storage errors
-            _ => Self::Other,
+            std::io::ErrorKind::PermissionDenied => Self::Io(IoErrorKind::PermissionDenied),
+            std::io::ErrorKind::ReadOnlyFilesystem => Self::Io(IoErrorKind::ReadOnly),
+
+            _ => Self::Other(Box::new(error)),
         }
     }
 }

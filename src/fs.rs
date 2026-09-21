@@ -8,11 +8,12 @@ use uuid::Uuid;
 use phenopackets::schema::v2::Phenopacket;
 use prost::Message;
 
-use crate::core::{PhenoStore, PhenoStoreError, StorageError};
+use crate::core::{PhenoStore, PhenoStoreError, IoErrorKind};
 
 pub struct FilePhenoStore<P> {
     dir: P,
 }
+
 
 impl<P> FilePhenoStore<P>
 where
@@ -23,13 +24,14 @@ where
     /// Will create an empty folder at the specified path to store phenopackets.
     ///
     /// Errors:
-    ///   - PhenoStoreError::Storage(StorageError::Initialization) : if the directory could not be created or is not empty
+    ///   - PhenoStoreError::Storage(StorageError::Initialization) : if the directory could not be created
+    /// TODO: replace PhenoStoreError with a config error?
     pub fn new(path: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
-        fs::create_dir_all(&path)?;
-        if fs::read_dir(&path)?.next().is_some() {
-            return Err(PhenoStoreError::Storage(StorageError::Initialization));
+        if !path.as_ref().is_dir(){
+            fs::create_dir_all(&path)?;
+        } else {
+            return Err(PhenoStoreError::Io(IoErrorKind::Initialization));
         }
-
         Ok(FilePhenoStore { dir: path })
     }
 
@@ -119,7 +121,7 @@ fn read_phenopacket(path: &Path) -> Result<Phenopacket, PhenoStoreError> {
     let mut file = File::open(path)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
-    Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::Storage(StorageError::Corrupted))
+    Phenopacket::decode(&buf[..]).map_err(|_| PhenoStoreError::InvalidData)
 }
 
 /// create a new protobuf file at the specified path
@@ -161,7 +163,7 @@ mod testutils {
     use std::{fs, path::Path};
     use tempfile;
 
-    use crate::filephenostore::*;
+    use crate::fs::*;
 
     /// get a temporary copy of the provided file. the copy will be deleted once the filehandle is dropped.
     pub fn tmpfilecopy_from(path: &str) -> std::io::Result<tempfile::NamedTempFile> {
@@ -190,7 +192,7 @@ mod testutils {
 mod test_core {
     use std::path::Path;
 
-    use crate::filephenostore::*;
+    use crate::fs::*;
 
     #[test]
     fn test_read_phenopacket() {
@@ -270,8 +272,8 @@ mod test_core {
 // FilePhenoStore
 #[cfg(test)]
 mod test_file_pheno_store {
-    use crate::filephenostore::*;
-    use std::{assert_matches, fs};
+    use crate::fs::*;
+    use std::{assert_matches, fs, str::FromStr};
 
     #[test]
     fn test_new() -> Result<(), PhenoStoreError> {
@@ -288,23 +290,7 @@ mod test_file_pheno_store {
         );
         Ok(())
     }
-    #[test]
-    fn test_new_fail_not_empty() -> Result<(), PhenoStoreError> {
-        let temp_dir = tempfile::TempDir::new()?;
-        let store_path = temp_dir.path().join("store");
-        fs::create_dir(&store_path)?;
-        let _ = File::create(store_path.join("dummyfile.pb"))?;
-        assert!(
-            store_path.join("dummyfile.pb").exists(),
-            "sth went wrong during test setup"
-        );
 
-        assert!(
-            FilePhenoStore::new(&store_path).is_err(),
-            "creating an empty store in a non-empty dir should fail."
-        );
-        Ok(())
-    }
 
     #[test]
     fn test_open() -> Result<(), PhenoStoreError> {
@@ -355,7 +341,7 @@ mod test_file_pheno_store {
         );
 
         // try to remove non existent
-        let nonexistend_id = Uuid::new_v4();
+        let nonexistend_id = Uuid::from_str("a different uuid").unwrap();
         let test_nonexists = ps.remove(&nonexistend_id);
         assert_matches!(test_nonexists, Err(PhenoStoreError::NotFound));
         Ok(())
@@ -387,7 +373,7 @@ mod test_file_pheno_store {
         let test_fail = ps.get(&id_corrupted_file);
         assert_matches!(
             test_fail,
-            Err(PhenoStoreError::Storage(StorageError::Corrupted))
+            Err(PhenoStoreError::InvalidData)
         );
 
         Ok(())

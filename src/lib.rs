@@ -1,2 +1,5 @@
-pub mod core;
-pub mod filephenostore;
+mod core;
+pub mod fs;
+
+// re-exports
+pub use core::{PhenoStore, PhenoStoreError, IoErrorKind};

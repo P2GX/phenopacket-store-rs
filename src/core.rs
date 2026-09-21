@@ -191,7 +191,6 @@ fn delete_phenopacket(path: &Path) -> Result<(), PhenoStoreError> {
 
 /// replace phenopacket at the specified path
 fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    // let tmp_file = tempfile::NamedTempFile::new()?; //new_in(path.parent().ok_or(PhenoStoreError::InvalidInput)? )?;
     let tmp_file = path.with_extension("_tmp");
     write_phenopacket(phenopacket, &tmp_file)?;
     fs::rename(&tmp_file, path).map_err(|error| {
@@ -277,9 +276,6 @@ mod test_core {
 
     #[test]
     fn test_delete_phenopacket() -> Result<(), PhenoStoreError> {
-        // let deleteme_file = tempfile::NamedTempFile::new()?;
-        // let deleteme_path = deleteme_file.path();
-        // fs::copy(Path::new("data/phenopacket.pb"), &deleteme_path)?;
         let deleteme_file = testutils::tmpfilecopy_from("data/phenopacket.pb")?;
         assert!(
             &deleteme_file.path().exists(),
@@ -302,7 +298,7 @@ mod test_core {
         let mut pp = read_phenopacket(&file.path())?;
 
         // change some values
-        pp.id = "a new id".into(); //TODO: actually we might want to prevent this
+        pp.id = "a new id".into();
 
         // apply changes
         replace_phenopacket(&pp, &file.path())?;
@@ -334,7 +330,10 @@ mod test_file_pheno_store {
 
         assert!(store.dir.is_dir());
         assert_eq!(&store_path, store.dir);
-        //TODO: assert store is empty
+        assert!(
+            store.dir.read_dir()?.next().is_none(),
+            "new store should be empty"
+        );
         Ok(())
     }
     #[test]
@@ -398,7 +397,10 @@ mod test_file_pheno_store {
             !ps.get_phenopacket_path(&id).exists(),
             "pb file to delete still exists."
         );
-        // assert!(ps.dir.read_dir().ter().next().is_none(), "store dir not empty");
+        assert!(
+            ps.dir.as_ref().read_dir()?.next().is_none(),
+            "store dir not empty -> remove failed"
+        );
 
         // try to remove non existent
         let nonexistend_id = Uuid::new_v4();

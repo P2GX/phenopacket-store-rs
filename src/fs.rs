@@ -8,12 +8,42 @@ use uuid::Uuid;
 use phenopackets::schema::v2::Phenopacket;
 use prost::Message;
 
-use crate::core::{PhenoStore, PhenoStoreError, IoErrorKind};
+use crate::core::{PhenoStore, PhenoStoreError};
 
+//
+// ERRORS
+//
+#[derive(Debug)]
+pub enum FilePhenoError {
+    //TODO
+    NotADirectory,
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for FilePhenoError {
+    fn from(value: std::io::Error) -> Self {
+            Self::Io(value)
+    }
+}
+
+impl std::fmt::Display for FilePhenoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FilePhenoError::NotADirectory => write!(f, "Not a directory"),
+            FilePhenoError::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for FilePhenoError {}
+
+//
+// FilePhenoStore
+//
+#[derive(Debug, Clone, PartialEq)]
 pub struct FilePhenoStore<P> {
     dir: P,
 }
-
 
 impl<P> FilePhenoStore<P>
 where
@@ -21,26 +51,20 @@ where
 {
     /// Initiate a new File-based Phenopackets Store at given location.
     ///
-    /// Will create an empty folder at the specified path to store phenopackets.
+    /// Will create an empty folder at the specified path, if `path` is not an existing directory.
     ///
-    /// Errors:
-    ///   - PhenoStoreError::Storage(StorageError::Initialization) : if the directory could not be created
-    /// TODO: replace PhenoStoreError with a config error?
-    pub fn new(path: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
-        if !path.as_ref().is_dir(){
-            fs::create_dir_all(&path)?;
+    /// # Errors:
+    ///   - if the directory does not exist and could not be created
+    ///   - the path exists but it does not point to a directory
+    pub fn new(path: P) -> Result<FilePhenoStore<P>, FilePhenoError> {
+        if path.as_ref().exists() {
+            if !path.as_ref().is_dir() {
+                return Err(FilePhenoError::NotADirectory);
+            }
         } else {
-            return Err(PhenoStoreError::Io(IoErrorKind::Initialization));
+            fs::create_dir_all(&path).map_err(FilePhenoError::Io)?;
         }
         Ok(FilePhenoStore { dir: path })
-    }
-
-    /// Create a file-based Phenopackets Store from an existing directory of phenopacket files
-    pub fn open(dir: P) -> Result<FilePhenoStore<P>, PhenoStoreError> {
-        match fs::read_dir(&dir) {
-            Ok(_) => Ok(FilePhenoStore { dir }),
-            Err(e) => Err(PhenoStoreError::from(e)),
-        }
     }
 
     /// returns the path for a pb file based on the id. Does NOT check whether the file actually exists, this just implements the naming convention.
@@ -180,7 +204,7 @@ mod testutils {
 
     /// create an empty example store in a temporary directory
     /// the TempDir needs to be returned and kept alive a long as you want to use the store, otherwise the dir is removed.
-    pub fn example_store_empty() -> Result<FilePhenoStore<tempfile::TempDir>, PhenoStoreError> {
+    pub fn example_store_empty() -> Result<FilePhenoStore<tempfile::TempDir>, FilePhenoError> {
         let temp_dir = tempfile::TempDir::new()?;
         assert!(temp_dir.path().exists(), "failed to create temp dir");
         let ps = FilePhenoStore::new(temp_dir)?;
@@ -273,10 +297,10 @@ mod test_core {
 #[cfg(test)]
 mod test_file_pheno_store {
     use crate::fs::*;
-    use std::{assert_matches, fs, str::FromStr};
+    use std::{assert_matches, fs};
 
     #[test]
-    fn test_new() -> Result<(), PhenoStoreError> {
+    fn test_new() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempfile::TempDir::new()?;
         let store_path = temp_dir.path().join("store");
 
@@ -291,21 +315,8 @@ mod test_file_pheno_store {
         Ok(())
     }
 
-
     #[test]
-    fn test_open() -> Result<(), PhenoStoreError> {
-        let temp_dir = tempfile::TempDir::new()?;
-        let ps = FilePhenoStore::open(temp_dir.path())?;
-        assert_eq!(
-            temp_dir.path(),
-            ps.dir,
-            "failed to set the store directory."
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_add() -> Result<(), PhenoStoreError> {
+    fn test_add() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempfile::TempDir::new()?;
         let ps = FilePhenoStore::new(temp_dir.path())?;
         let pp = testutils::example_phenopacket()?;
@@ -322,7 +333,7 @@ mod test_file_pheno_store {
 
     #[test]
     /// depends on add()
-    fn test_remove() -> Result<(), PhenoStoreError> {
+    fn test_remove() -> Result<(), Box<dyn std::error::Error>> {
         // setup
         let ps = testutils::example_store_empty()?;
 
@@ -341,14 +352,14 @@ mod test_file_pheno_store {
         );
 
         // try to remove non existent
-        let nonexistend_id = Uuid::from_str("a different uuid").unwrap();
+        let nonexistend_id = Uuid::new_v4();
         let test_nonexists = ps.remove(&nonexistend_id);
         assert_matches!(test_nonexists, Err(PhenoStoreError::NotFound));
         Ok(())
     }
 
     #[test]
-    fn test_get() -> Result<(), PhenoStoreError> {
+    fn test_get() -> Result<(), Box<dyn std::error::Error>> {
         // setup
         let temp_dir = tempfile::TempDir::new()?;
         let ps = FilePhenoStore::new(temp_dir.path())?;
@@ -371,10 +382,7 @@ mod test_file_pheno_store {
             "ohno this file is corrupted and does not contain valid pb data :("
         );
         let test_fail = ps.get(&id_corrupted_file);
-        assert_matches!(
-            test_fail,
-            Err(PhenoStoreError::InvalidData)
-        );
+        assert_matches!(test_fail, Err(PhenoStoreError::InvalidData));
 
         Ok(())
     }

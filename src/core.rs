@@ -1,7 +1,35 @@
-use std::{error::Error};
+use std::error::Error;
 use uuid::Uuid;
 
 use phenopackets::schema::v2::Phenopacket;
+
+pub trait PhenoStore {
+    fn add(&self, phenopacket: &Phenopacket) -> Result<Uuid, PhenoStoreError>;
+    fn remove(&self, id: &Uuid) -> Result<(), PhenoStoreError>;
+    fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<(), PhenoStoreError>;
+    fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError>;
+}
+
+impl<T> PhenoStore for &T
+where
+    T: PhenoStore + ?Sized,
+{
+    fn add(&self, phenopacket: &Phenopacket) -> Result<Uuid, PhenoStoreError> {
+        (*self).add(phenopacket)
+    }
+
+    fn remove(&self, id: &Uuid) -> Result<(), PhenoStoreError> {
+        (*self).remove(id)
+    }
+
+    fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<(), PhenoStoreError> {
+        (*self).update(id, phenopacket)
+    }
+
+    fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError> {
+        (*self).get(id)
+    }
+}
 
 /// The error returned when a non-normal execution happens, e.g. network connectivity issue,
 /// but not when a phenopacket is searched and not found.
@@ -41,9 +69,10 @@ impl From<std::io::Error> for PhenoStoreError {
     }
 }
 
-pub trait PhenoStore {
-    fn add(&self, phenopacket: &Phenopacket) -> Result<Uuid, PhenoStoreError>;
-    fn remove(&self, id: &Uuid) -> Result<(), PhenoStoreError>;
-    fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<(), PhenoStoreError>;
-    fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError>;
+impl std::fmt::Display for PhenoStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
+
+impl std::error::Error for PhenoStoreError {}

@@ -19,22 +19,6 @@ pub trait PhenoStore {
     /// Fails for reasons unrelated to normal backend functionality.
     fn add(&self, phenopacket: &Phenopacket) -> Result<Uuid, PhenoStoreError>;
 
-    /// Remove the `phenopacket` from the store.
-    ///
-    /// Returns `Ok(true)` if the phenopacket was removed or `Ok(false)` if it was not found.
-    ///
-    /// # Errors
-    ///
-    /// Fails for reasons unrelated to normal backend functionality.
-    fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError>;
-
-    /// Update the `phenopacket` stored under `id`. Returns `Ok(true)` if the phenopacket was updated and `Ok(false)` otherwise.
-    ///
-    /// # Errors
-    ///
-    /// Fails for reasons unrelated to normal backend functionality.
-    fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<bool, PhenoStoreError>;
-
     /// Get the `phenopacket` stored under the `id`.
     ///
     /// Returns `Ok(None)` if no such phenopacket exists.
@@ -43,6 +27,23 @@ pub trait PhenoStore {
     ///
     /// Fails for reasons unrelated to normal backend functionality.
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError>;
+    
+    /// Update the `phenopacket` stored under `id`. Returns `Ok(true)` if the phenopacket was updated
+    /// or `Ok(false)` if no phenopacket was found for the `id`.
+    ///
+    /// # Errors
+    ///
+    /// Fails for reasons unrelated to normal backend functionality.
+    fn update(&self, id: &Uuid, phenopacket: &Phenopacket) -> Result<bool, PhenoStoreError>;
+
+    /// Remove the `phenopacket` from the store.
+    ///
+    /// Returns `Ok(true)` if the phenopacket was removed or `Ok(false)` if it was not found.
+    ///
+    /// # Errors
+    ///
+    /// Fails for reasons unrelated to normal backend functionality.
+    fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError>;
 }
 
 impl<T> PhenoStore for &T

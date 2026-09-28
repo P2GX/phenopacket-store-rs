@@ -107,11 +107,6 @@ where
         Ok(id)
     }
 
-    fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError> {
-        let path = self.get_phenopacket_path(id);
-        delete_phenopacket(&path)
-    }
-
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError> {
         let path = self.get_phenopacket_path(id);
         match read_phenopacket(&path) {
@@ -130,6 +125,11 @@ where
             }
             None => Ok(false),
         }
+    }
+
+    fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError> {
+        let path = self.get_phenopacket_path(id);
+        delete_phenopacket(&path)
     }
 }
 

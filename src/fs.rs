@@ -1,3 +1,4 @@
+//! A [`PhenoStore`] implementation backed by a file system.
 use std::{
     fs::{self, File},
     io::{Read, Write},
@@ -13,8 +14,7 @@ use crate::core::{PhenoStore, PhenoStoreError};
 /// The reasons why creating of a [`FilePhenoStore`] can fail.
 #[derive(Debug)]
 pub enum FilePhenoStoreError {
-    /// The provided path did not point to a directory
-    /// or it was impossible to create one.
+    /// The provided path did not point to a directory.
     NotADirectory,
     Io(std::io::Error),
 }

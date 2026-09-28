@@ -10,36 +10,33 @@ use prost::Message;
 
 use crate::core::{PhenoStore, PhenoStoreError};
 
-//
-// ERRORS
-//
+/// The reasons why creating of a [`FilePhenoStore`] can fail.
 #[derive(Debug)]
-pub enum FilePhenoError {
-    //TODO
+pub enum FilePhenoStoreError {
+    /// The provided path did not point to a directory
+    /// or it was impossible to create one.
     NotADirectory,
     Io(std::io::Error),
 }
 
-impl From<std::io::Error> for FilePhenoError {
+impl From<std::io::Error> for FilePhenoStoreError {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
     }
 }
 
-impl std::fmt::Display for FilePhenoError {
+impl std::fmt::Display for FilePhenoStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FilePhenoError::NotADirectory => write!(f, "Not a directory"),
-            FilePhenoError::Io(error) => write!(f, "{error}"),
+            FilePhenoStoreError::NotADirectory => write!(f, "Not a directory"),
+            FilePhenoStoreError::Io(error) => write!(f, "{error}"),
         }
     }
 }
 
-impl std::error::Error for FilePhenoError {}
+impl std::error::Error for FilePhenoStoreError {}
 
-//
-// FilePhenoStore
-//
+/// FilePhenoStore keeps all phenopackets in a user-provided file system directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilePhenoStore<P> {
     dir: P,
@@ -56,13 +53,13 @@ where
     /// # Errors:
     ///   - if the directory does not exist and could not be created
     ///   - the path exists but it does not point to a directory
-    pub fn new(path: P) -> Result<FilePhenoStore<P>, FilePhenoError> {
+    pub fn new(path: P) -> Result<FilePhenoStore<P>, FilePhenoStoreError> {
         if path.as_ref().exists() {
             if !path.as_ref().is_dir() {
-                return Err(FilePhenoError::NotADirectory);
+                return Err(FilePhenoStoreError::NotADirectory);
             }
         } else {
-            fs::create_dir_all(&path).map_err(FilePhenoError::Io)?;
+            fs::create_dir_all(&path).map_err(FilePhenoStoreError::Io)?;
         }
         Ok(FilePhenoStore { dir: path })
     }
@@ -204,7 +201,7 @@ mod testutils {
 
     /// create an empty example store in a temporary directory
     /// the TempDir needs to be returned and kept alive a long as you want to use the store, otherwise the dir is removed.
-    pub fn example_store_empty() -> Result<FilePhenoStore<tempfile::TempDir>, FilePhenoError> {
+    pub fn example_store_empty() -> Result<FilePhenoStore<tempfile::TempDir>, FilePhenoStoreError> {
         let temp_dir = tempfile::TempDir::new()?;
         assert!(temp_dir.path().exists(), "failed to create temp dir");
         let ps = FilePhenoStore::new(temp_dir)?;

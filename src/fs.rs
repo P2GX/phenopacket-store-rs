@@ -119,10 +119,7 @@ where
         let pp_path = self.get_phenopacket_path(id);
 
         match self.get(id)? {
-            Some(_) => {
-                replace_phenopacket(phenopacket, &pp_path)?;
-                Ok(true)
-            }
+            Some(_) => replace_phenopacket(phenopacket, &pp_path),
             None => Ok(false),
         }
     }
@@ -175,15 +172,15 @@ fn delete_phenopacket(path: &Path) -> Result<bool, PhenoStoreError> {
 }
 
 /// replace phenopacket at the specified path
-fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
+fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<bool, PhenoStoreError> {
     let tmp_file = path.with_extension("_tmp");
     write_phenopacket(phenopacket, &tmp_file)?;
     fs::rename(&tmp_file, path).map_err(|error| {
-        let _ = fs::remove_file(&tmp_file);
+        fs::remove_file(&tmp_file).expect("The temporary file should exist and we should have permissions to delete it because we had just created it");
         PhenoStoreError::from(error)
     })?;
 
-    Ok(())
+    Ok(true)
 }
 
 //
@@ -229,10 +226,10 @@ mod test_core {
     #[test]
     fn test_read_phenopacket() {
         let path = Path::new("data/phenopacket.pb");
-        let pp = read_phenopacket(path)
-            .expect("Test phenopacket should be present")
-            .expect("Test phenopacket should be present");
-
+        let pp = read_phenopacket(path);
+        
+        let pp = pp.expect("The phenopacket file should be well formatted");
+        let pp = pp.expect("The phenopacket file should be present in the repo");
         assert_eq!(pp.id, "comprehensive-phenopacket-id");
     }
 
@@ -246,9 +243,10 @@ mod test_core {
         assert!(!std::fs::metadata(outfile.path())?.len() > 0);
 
         // read again to check persistence
-        let pp_created = read_phenopacket(outfile.path())
-            .expect("The phenopacket file exists and is well formatted")
-            .expect("The phenopacket file exists");
+        let pp_created = read_phenopacket(outfile.path());
+        
+        let pp_created = pp_created.expect("The phenopacket file should be well formatted");
+        let pp_created = pp_created.expect("The phenopacket file should be present in the repo");
         assert_eq!(
             pp, pp_created,
             "the written phenopacket does not match the read phenopacket."

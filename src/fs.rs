@@ -22,7 +22,7 @@ pub enum FilePhenoError {
 
 impl From<std::io::Error> for FilePhenoError {
     fn from(value: std::io::Error) -> Self {
-            Self::Io(value)
+        Self::Io(value)
     }
 }
 

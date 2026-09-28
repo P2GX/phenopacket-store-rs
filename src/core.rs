@@ -45,13 +45,12 @@ pub enum PhenoStoreError {
     Other(Box<dyn Error + Send + Sync>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IoErrorKind {
     PermissionDenied,
     ReadOnly,
     CapacityExceeded,
     Timeout,
-    Initialization,
 }
 
 impl From<std::io::Error> for PhenoStoreError {
@@ -76,3 +75,23 @@ impl std::fmt::Display for PhenoStoreError {
 }
 
 impl std::error::Error for PhenoStoreError {}
+
+#[cfg(test)]
+mod test_pheno_store_error {
+    use parameterized::parameterized;
+
+    use super::{IoErrorKind, PhenoStoreError};
+
+    #[parameterized(
+        val={
+            (PhenoStoreError::AlreadyExists, "AlreadyExists"),
+            (PhenoStoreError::Io(IoErrorKind::ReadOnly), "Io(ReadOnly)"),
+            (PhenoStoreError::Other(Box::new(PhenoStoreError::NotFound)), "Other(NotFound)"),
+        },
+    )]
+    fn test_display(val: (PhenoStoreError, &'static str)) {
+        let (error, expected) = val;
+        let msg = error.to_string();
+        assert_eq!(&msg, expected);
+    }
+}

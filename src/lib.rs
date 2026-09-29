@@ -1,5 +1,5 @@
-mod core;
 mod cohort;
+mod core;
 pub mod fs;
 
 // re-exports

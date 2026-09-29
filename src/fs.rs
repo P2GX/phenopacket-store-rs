@@ -227,7 +227,7 @@ mod test_core {
     fn test_read_phenopacket() {
         let path = Path::new("data/phenopacket.pb");
         let pp = read_phenopacket(path);
-        
+
         let pp = pp.expect("The phenopacket file should be well formatted");
         let pp = pp.expect("The phenopacket file should be present in the repo");
         assert_eq!(pp.id, "comprehensive-phenopacket-id");
@@ -244,7 +244,7 @@ mod test_core {
 
         // read again to check persistence
         let pp_created = read_phenopacket(outfile.path());
-        
+
         let pp_created = pp_created.expect("The phenopacket file should be well formatted");
         let pp_created = pp_created.expect("The phenopacket file should be present in the repo");
         assert_eq!(

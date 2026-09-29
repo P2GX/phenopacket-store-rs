@@ -27,7 +27,7 @@ pub trait PhenoStore {
     ///
     /// Fails for reasons unrelated to normal backend functionality.
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError>;
-    
+
     /// Update the `phenopacket` stored under `id`. Returns `Ok(true)` if the phenopacket was updated
     /// or `Ok(false)` if no phenopacket was found for the `id`.
     ///

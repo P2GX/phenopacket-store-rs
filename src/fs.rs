@@ -149,7 +149,7 @@ fn read_phenopacket(path: &Path) -> Result<Option<Phenopacket>, PhenoStoreError>
 
 /// create a new protobuf file at the specified path
 fn write_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    // study "encoded_len" to prevent Vec reallocations.
+    //TODO study "encoded_len" to prevent Vec reallocations.
     let mut buf = Vec::new();
     phenopacket
         .encode(&mut buf)
@@ -187,7 +187,7 @@ fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<bool, P
 // TESTS
 //
 #[cfg(test)]
-mod testutils {
+pub(crate) mod testutils {
     use std::{fs, path::Path};
     use tempfile;
 

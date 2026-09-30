@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{BufRead, BufReader, BufWriter, Error as IoError, ErrorKind as IoErrorKind, Write},
+    io::{BufRead, BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use crate::{PhenoStoreError, core::PhenoStore};
+use crate::PhenoStoreError;
 use serde_json::error::Category;
 use uuid::Uuid;
 // use phenopackets::schema::v2::Cohort;
@@ -26,6 +26,8 @@ pub enum PhenoCohortError {
 
     Io(std::io::Error),
     Store(PhenoStoreError),
+    // Codec(CohortCodec::Error),
+    Codec(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl std::fmt::Display for PhenoCohortError {
@@ -87,32 +89,27 @@ impl Cohort {
             members: Vec::new(),
         }
     }
-
-    // add a Phenopacket Id to the cohort at `path`
-    // TODO move this logic to the manager
-    // pub fn add(path: &PathBuf, id: &PhenoId) -> Result<(), PhenoCohortError> {
-    //     let mut cohort = Cohort::read(path)?;
-    //     cohort.members.push(*id);
-    //     cohort.write(path)?;
-    //     Ok(())
-    // }
 }
 
 pub trait CohortCodec {
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, String>;
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), String>;
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error>;
+    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
 }
 
 pub struct JsonCohortCodec;
 
 impl CohortCodec for JsonCohortCodec {
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, String> {
-        let c: Cohort = serde_json::from_reader(r).expect("Error is handled");
+    type Error = std::io::Error;
+
+    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error> {
+        let c: Cohort = serde_json::from_reader(r)?;
         Ok(c)
     }
 
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), String> {
-        serde_json::to_writer(w, c).expect("todo");
+    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
+        serde_json::to_writer(w, c)?;
         Ok(())
     }
 }
@@ -124,10 +121,18 @@ pub struct FileCohortManager<P, C> {
 
 impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
     fn new_cohort(&self) -> Result<CohortId, PhenoCohortError> {
+        let cohort = Cohort::new();
         let id = CohortId::new_v4();
         let path = self.get_cohort_path(&id);
-        let _ = fs::File::create(&path)
-            .expect("expect to have permission to write in cohort dir, since we created it.");
+        let mut writer = BufWriter::new(fs::File::create(&path)?);
+
+        // write the new (empty) cohort state to file
+        let _ = self.codec.write(&cohort, &mut writer).map_err(|e| {
+            fs::remove_file(&path).unwrap();
+            PhenoCohortError::Codec(Box::new(e))
+            // PhenoCohortError::from(e)
+        });
+        writer.flush()?;
         Ok(id)
     }
 
@@ -138,25 +143,48 @@ impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
             let c = self
                 .codec
                 .read(&mut r)
-                .map_err(|e| PhenoCohortError::InvalidData)?;
+                .map_err(|_| PhenoCohortError::InvalidData)?;
             Ok(Some(c))
         } else {
-            todo!()
+            // no file with `id` found
+            Ok(None)
         }
     }
 
     fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, PhenoCohortError> {
-        todo!()
+        let cohort_file = self.get_cohort_path(id);
+        if !cohort_file.exists() {
+            return Ok(false);
+        }
+        let tmp_path = cohort_file.with_added_extension(".tmp");
+        let try_update = {
+            let mut writer = BufWriter::new(File::create(&tmp_path)?);
+            self.codec
+                .write(cohort, &mut writer)
+                .map_err(|e| PhenoCohortError::Codec(Box::new(e)))
+                .and_then(|()| writer.flush().map_err(PhenoCohortError::from))
+        };
+
+        match try_update {
+            Ok(_) => {
+                fs::rename(&tmp_path, &cohort_file)?;
+                Ok(true)
+            }
+            Err(_) => {
+                fs::remove_file(&tmp_path)?;
+                Ok(false)
+            }
+        }
     }
 
     fn remove(&self, id: &CohortId) -> Result<bool, PhenoCohortError> {
-        let path = self.get_cohort_path(&id);
+        let path = self.get_cohort_path(id);
         match fs::remove_file(&path) {
             Ok(_) => Ok(true),
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(false),
                 IoErrorKind::IsADirectory => Err(PhenoCohortError::InvalidData), // fs might be corrupted by external instance
-                IoErrorKind::PermissionDenied => Err(PhenoCohortError::PermissionDenied), //TODO do we really want to propagate or do we want to assume we can write here and panic if not, since we created the parent dir?
+                IoErrorKind::PermissionDenied => Err(PhenoCohortError::PermissionDenied), //TODO do we really want to propagate or do we want to assume we can write here and panic if not. this is prob a config error?
                 _ => Err(PhenoCohortError::Io(e)),
             },
         }
@@ -172,7 +200,7 @@ impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
                 .and_then(|stem| stem.to_str())
                 .unwrap();
 
-            let id = CohortId::from_str(&id_str).unwrap();
+            let id = CohortId::from_str(id_str).unwrap();
             let cohort = self.get(&id).unwrap().unwrap();
             (id, cohort)
         })
@@ -192,7 +220,8 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     pub fn new(cohorts_dir: P, codec: C) -> Result<Self, PhenoCohortError> {
         if !cohorts_dir.as_ref().exists() {
             if !cohorts_dir.as_ref().is_dir() {
-                //TODO return configuration error
+                // path exists but is not a dir
+                return Err(PhenoCohortError::InvalidInput)
             }
         } else {
             fs::create_dir_all(&cohorts_dir).map_err(PhenoCohortError::Io)?;
@@ -210,24 +239,28 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
 // TESTS
 //
 #[cfg(test)]
-mod test_cohort {
+mod testutils {}
+
+#[cfg(test)]
+mod test_cohort_manager {
     use super::*;
-    // use crate::fs::testutils;
+    use std::assert_matches;
+    use tempfile;
 
     #[test]
-    // fn test_new() {
-    //     // setup
-    //     let fps = testutils::example_store_empty().unwrap(); //FilePhenoStore::new("data").expect("example dir `data` should exist and be readable");
-    //     let tmp = tempfile::tempdir().expect("should be possible to create temporary folder");
-    //     let fcm = FileCohortManager::new(tmp.into(), fps).expect("initiation with existing empty dirs should work");
+    fn test_new() {
+        // setup
+        let tmpdir = tempfile::TempDir::new().expect("creation of tempdir should work.");
+        let _ = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
+    }
 
-    //     assert!(fcm.dir.exists(), "directory should exist after initiation");
-    // }
-
+    #[test]
     fn test_cohort_path() {
         // setup
-        let fcm = FileCohortManager::new(std::path::PathBuf::from("data"), JsonCohortCodec)
-            .expect("initiation with existing empty dirs should work");
+        let dir = Path::new("data");
+        let fcm = FileCohortManager::new(&dir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
 
         let id: Uuid = "67e55044-10b1-426f-9247-bb680e5fe0c8"
             .parse()
@@ -238,5 +271,126 @@ mod test_cohort {
             cohort_path.to_str().expect("valid string"),
             "data/67e55044-10b1-426f-9247-bb680e5fe0c8.json"
         )
+    }
+
+    #[test]
+    fn test_new_cohort_get() -> Result<(), PhenoCohortError> {
+        // setup
+        let tmpdir = tempfile::TempDir::new()?;
+        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
+
+        //test new_cohort()
+        let id1 = fcm.new_cohort().expect("adding a first cohort should work");
+        let id2 = fcm.new_cohort().expect("adding second cohort should work");
+
+        // test get success
+        let c1 = fcm.get(&id1);
+        assert_matches!(c1, Ok(Some(_)));
+        let c2 = fcm.get(&id2);
+        assert_matches!(c2, Ok(Some(_)));
+        let c11 = fcm.get(&id1);
+        assert_matches!(
+            c11,
+            Ok(Some(_)),
+            "should be able to get the same cohort multiple times."
+        );
+
+        // test get fail
+        let non_existent_id = Uuid::new_v4();
+        let c3 = fcm.get(&non_existent_id);
+        assert_matches!(
+            c3,
+            Ok(None),
+            "lookup of non existing id should return Ok(None)"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove() -> Result<(), PhenoCohortError> {
+        // setup
+        let tmpdir = tempfile::TempDir::new()?;
+        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
+        let c1 = fcm.new_cohort()?;
+        let c2 = fcm.new_cohort()?;
+        let c3 = fcm.new_cohort()?;
+        assert_matches!(fcm.get(&c1), Ok(Some(_)));
+        assert_matches!(fcm.get(&c2), Ok(Some(_)));
+        assert_matches!(fcm.get(&c3), Ok(Some(_)));
+
+        let t_remove_existing = fcm.remove(&c2);
+        assert_matches!(
+            t_remove_existing,
+            Ok(true),
+            "failed to remove existing cohort"
+        );
+        assert_matches!(
+            fcm.get(&c2),
+            Ok(None),
+            "removed cohort should not exist in CohortManager anymore"
+        );
+
+        let t_remove_nonexisting = fcm.remove(&c2);
+        assert_matches!(t_remove_nonexisting, Ok(false));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update() -> Result<(), PhenoCohortError> {
+        //setup
+        let tmpdir = tempfile::TempDir::new()?;
+        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
+
+        // test
+        let id1 = fcm.new_cohort()?;
+        let mut c2 = Cohort::new();
+        c2.members.push(Uuid::new_v4());
+
+        let t_sucess = fcm.update(&id1, &c2);
+        assert_matches!(t_sucess, Ok(true), "update failed");
+        let c2_fetched = fcm.get(&id1);
+        assert_matches!(c2_fetched, Ok(Some(_)), "unable to get cohort after update");
+        let c2_fetched = c2_fetched?.unwrap();
+        assert!(
+            c2_fetched.members.len() == 1,
+            "update failed to change data"
+        );
+        let t_id_not_found = fcm.update(&Uuid::new_v4(), &c2);
+        assert_matches!(
+            t_id_not_found,
+            Ok(false),
+            "update with nonexistent id failed different than expected"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iter_cohorts() -> Result<(), PhenoCohortError> {
+        // setup
+        let tmpdir = tempfile::TempDir::new()?;
+        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+            .expect("initiation on temp dir and json codec to succeed.");
+        let c1 = fcm.new_cohort()?;
+        let c2 = fcm.new_cohort()?;
+        let c3 = fcm.new_cohort()?;
+        let mut cs = vec![c1, c2, c3];
+
+        let mut cs_test = Vec::new();
+
+        for (id, _) in fcm.iter_cohorts() {
+            cs_test.push(id);
+        }
+        assert_eq!(
+            cs.sort(),
+            cs_test.sort(),
+            "cohorts added and cohorts iterated over do not match."
+        );
+        Ok(())
     }
 }

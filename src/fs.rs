@@ -149,8 +149,7 @@ fn read_phenopacket(path: &Path) -> Result<Option<Phenopacket>, PhenoStoreError>
 
 /// create a new protobuf file at the specified path
 fn write_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<(), PhenoStoreError> {
-    //TODO study "encoded_len" to prevent Vec reallocations.
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(phenopacket.encoded_len());
     phenopacket
         .encode(&mut buf)
         .expect("we expect enough memory to store a phenopacket.");

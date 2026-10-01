@@ -6,10 +6,8 @@ use std::{
     str::FromStr,
 };
 
-use crate::PhenoStoreError;
 use serde_json::error::Category;
 use uuid::Uuid;
-// use phenopackets::schema::v2::Cohort;
 
 //
 // ERRORS
@@ -17,7 +15,7 @@ use uuid::Uuid;
 /// public error type to report issues to the user of this crate
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum PhenoCohortError {
+pub enum CohortManagerError {
     AlreadyExists,
     NotFound,
     InvalidData,
@@ -25,38 +23,31 @@ pub enum PhenoCohortError {
     PermissionDenied,
 
     Io(std::io::Error),
-    Store(PhenoStoreError),
-    // Codec(CohortCodec::Error),
-    Codec(Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl std::fmt::Display for PhenoCohortError {
+impl std::fmt::Display for CohortManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::NotFound => write!(f, "Cohort not found."),
+            Self::AlreadyExists => write!(f, "Cohort already exists."),
+            Self::InvalidInput => write!(f, "Invalid input given."),
+            Self::InvalidData => write!(f, "Encountered invalid data, verify data integrity."),
+            Self::Io(err) => write!(f, "Ran into an issue with the CohortManager backend: {err}"),
             err => write!(f, "{err}"),
         }
     }
 }
 
-impl std::error::Error for PhenoCohortError {}
+impl std::error::Error for CohortManagerError {}
 
-impl From<std::io::Error> for PhenoCohortError {
+//TODO is this done? do we want to explicitly map InvalidData and InvalidInput or not?
+impl From<std::io::Error> for CohortManagerError {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
             std::io::ErrorKind::NotFound => Self::NotFound,
+            std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
             _ => Self::Io(value),
-        }
-    }
-}
-
-impl From<serde_json::Error> for PhenoCohortError {
-    fn from(value: serde_json::Error) -> Self {
-        match value.classify() {
-            Category::Data => Self::InvalidData,
-            Category::Syntax => Self::InvalidInput,
-            Category::Io => Self::Io(value.into()),
-            Category::Eof => Self::Io(value.into()),
         }
     }
 }
@@ -65,10 +56,12 @@ impl From<serde_json::Error> for PhenoCohortError {
 // COHORT MANAGER
 //
 pub trait CohortManager {
-    fn new_cohort(&self) -> Result<CohortId, PhenoCohortError>;
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, PhenoCohortError>;
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, PhenoCohortError>;
-    fn remove(&self, id: &CohortId) -> Result<bool, PhenoCohortError>;
+    fn new_cohort(&self) -> Result<CohortId, CohortManagerError>;
+    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError>;
+    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError>;
+    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError>;
+
+    /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])
     fn iter_cohorts(&self) -> impl Iterator<Item = (CohortId, Cohort)>;
 }
 
@@ -91,6 +84,11 @@ impl Cohort {
     }
 }
 
+//
+// FILE COHORT MANAGER
+//
+
+/// provides abilities to read/write a [`Cohort`] from/to the filesystem.
 pub trait CohortCodec {
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -98,29 +96,19 @@ pub trait CohortCodec {
     fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
 }
 
-pub struct JsonCohortCodec;
-
-impl CohortCodec for JsonCohortCodec {
-    type Error = std::io::Error;
-
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error> {
-        let c: Cohort = serde_json::from_reader(r)?;
-        Ok(c)
-    }
-
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
-        serde_json::to_writer(w, c)?;
-        Ok(())
-    }
-}
-
+/// A filesystem-based implementation of the [`CohortManager`].
 pub struct FileCohortManager<P, C> {
     cohorts_dir: P,
     codec: C,
 }
 
-impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
-    fn new_cohort(&self) -> Result<CohortId, PhenoCohortError> {
+impl<P, C> CohortManager for FileCohortManager<P, C>
+where
+    P: AsRef<Path>,
+    C: CohortCodec,
+    C::Error: Into<CohortManagerError>,
+{
+    fn new_cohort(&self) -> Result<CohortId, CohortManagerError> {
         let cohort = Cohort::new();
         let id = CohortId::new_v4();
         let path = self.get_cohort_path(&id);
@@ -129,40 +117,42 @@ impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
         // write the new (empty) cohort state to file
         let _ = self.codec.write(&cohort, &mut writer).map_err(|e| {
             fs::remove_file(&path).unwrap();
-            PhenoCohortError::Codec(Box::new(e))
-            // PhenoCohortError::from(e)
+            e.into()
         });
         writer.flush()?;
         Ok(id)
     }
 
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, PhenoCohortError> {
+    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError> {
         let path = self.get_cohort_path(id);
-        if let Ok(file) = File::open(path) {
-            let mut r = BufReader::new(file);
-            let c = self
-                .codec
-                .read(&mut r)
-                .map_err(|_| PhenoCohortError::InvalidData)?;
-            Ok(Some(c))
-        } else {
-            // no file with `id` found
-            Ok(None)
+        match File::open(path) {
+            Ok(file) => {
+                let mut r = BufReader::new(file);
+                let c = self
+                    .codec
+                    .read(&mut r)
+                    .map_err(|_| CohortManagerError::InvalidData)?;
+                Ok(Some(c))
+            }
+            Err(e) => match e.kind() {
+                IoErrorKind::NotFound => Ok(None),
+                _ => Err(CohortManagerError::Io(e)),
+            },
         }
     }
 
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, PhenoCohortError> {
+    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError> {
         let cohort_file = self.get_cohort_path(id);
         if !cohort_file.exists() {
             return Ok(false);
         }
-        let tmp_path = cohort_file.with_added_extension(".tmp");
+        let tmp_path = cohort_file.with_added_extension("tmp");
         let try_update = {
             let mut writer = BufWriter::new(File::create(&tmp_path)?);
             self.codec
                 .write(cohort, &mut writer)
-                .map_err(|e| PhenoCohortError::Codec(Box::new(e)))
-                .and_then(|()| writer.flush().map_err(PhenoCohortError::from))
+                .map_err(Into::into)
+                .and_then(|()| writer.flush().map_err(Into::into))
         };
 
         match try_update {
@@ -170,27 +160,27 @@ impl<P: AsRef<Path>, C: CohortCodec> CohortManager for FileCohortManager<P, C> {
                 fs::rename(&tmp_path, &cohort_file)?;
                 Ok(true)
             }
-            Err(_) => {
-                fs::remove_file(&tmp_path)?;
-                Ok(false)
+            Err(e) => {
+                let _ = fs::remove_file(&tmp_path);
+                Err(e)
             }
         }
     }
 
-    fn remove(&self, id: &CohortId) -> Result<bool, PhenoCohortError> {
+    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError> {
         let path = self.get_cohort_path(id);
         match fs::remove_file(&path) {
             Ok(_) => Ok(true),
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(false),
-                IoErrorKind::IsADirectory => Err(PhenoCohortError::InvalidData), // fs might be corrupted by external instance
-                IoErrorKind::PermissionDenied => Err(PhenoCohortError::PermissionDenied), //TODO do we really want to propagate or do we want to assume we can write here and panic if not. this is prob a config error?
-                _ => Err(PhenoCohortError::Io(e)),
+                IoErrorKind::IsADirectory => Err(CohortManagerError::InvalidData), // fs might be corrupted by external instance
+                IoErrorKind::PermissionDenied => Err(CohortManagerError::PermissionDenied), //TODO do we really want to propagate or do we want to assume we can write here and panic if not. this is prob a config error?
+                _ => Err(CohortManagerError::Io(e)),
             },
         }
     }
 
-    /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])
+    //TODO replace upwrapping with error handling strategy
     fn iter_cohorts(&self) -> impl Iterator<Item = (CohortId, Cohort)> {
         self.cohorts_dir.as_ref().read_dir().unwrap().map(|entry| {
             // crop id from path /some/path/ID.ext
@@ -217,14 +207,14 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     /// - the given path exists, but is not a directory
     /// - the path does not exist and could not be created
     ///
-    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, PhenoCohortError> {
+    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, CohortManagerError> {
         if !cohorts_dir.as_ref().exists() {
             if !cohorts_dir.as_ref().is_dir() {
                 // path exists but is not a dir
-                return Err(PhenoCohortError::InvalidInput)
+                return Err(CohortManagerError::InvalidInput);
             }
         } else {
-            fs::create_dir_all(&cohorts_dir).map_err(PhenoCohortError::Io)?;
+            fs::create_dir_all(&cohorts_dir).map_err(CohortManagerError::Io)?;
         }
         Ok(FileCohortManager { cohorts_dir, codec })
     }
@@ -232,6 +222,37 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     /// returns the path for a cohort file based on its id
     fn get_cohort_path(&self, id: &CohortId) -> PathBuf {
         self.cohorts_dir.as_ref().join(format!("{id}.json"))
+    }
+}
+
+//
+// JSON COHORT CODEC
+//
+pub struct JsonCohortCodec;
+
+impl CohortCodec for JsonCohortCodec {
+    type Error = serde_json::Error;
+
+    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error> {
+        let c: Cohort = serde_json::from_reader(r)?;
+        Ok(c)
+    }
+
+    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
+        serde_json::to_writer(w, c)?;
+        Ok(())
+    }
+}
+
+//ASK is this really a mapping we want? or should that rather be serde->CodecError? would that need to be implemented by the user, if they provide a codec with its own error type?
+impl From<serde_json::Error> for CohortManagerError {
+    fn from(value: serde_json::Error) -> Self {
+        match value.classify() {
+            Category::Data => Self::InvalidData,
+            Category::Syntax => Self::InvalidInput,
+            Category::Io => Self::Io(value.into()),
+            Category::Eof => Self::Io(value.into()),
+        }
     }
 }
 
@@ -274,7 +295,7 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_new_cohort_get() -> Result<(), PhenoCohortError> {
+    fn test_new_cohort_get() -> Result<(), CohortManagerError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
@@ -309,7 +330,7 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_remove() -> Result<(), PhenoCohortError> {
+    fn test_remove() -> Result<(), CohortManagerError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
@@ -340,7 +361,7 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_update() -> Result<(), PhenoCohortError> {
+    fn test_update() -> Result<(), CohortManagerError> {
         //setup
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
@@ -371,7 +392,7 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_iter_cohorts() -> Result<(), PhenoCohortError> {
+    fn test_iter_cohorts() -> Result<(), CohortManagerError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)

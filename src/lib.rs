@@ -1,4 +1,4 @@
-mod cohort;
+pub mod cohort;
 mod core;
 pub mod fs;
 

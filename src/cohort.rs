@@ -85,7 +85,7 @@ pub trait CohortManager {
     fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError>;
 
     /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])
-    fn iter_cohorts(&self) -> impl Iterator<Item = (CohortId, Cohort)>;
+    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError>;
 }
 
 //
@@ -206,20 +206,26 @@ where
         }
     }
 
-    //TODO replace upwrapping with error handling strategy
-    fn iter_cohorts(&self) -> impl Iterator<Item = (CohortId, Cohort)> {
-        self.cohorts_dir.as_ref().read_dir().unwrap().map(|entry| {
-            // crop id from path /some/path/ID.ext
-            let filename = entry.unwrap().file_name();
-            let id_str = Path::new(&filename)
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap();
-
-            let id = CohortId::from_str(id_str).unwrap();
-            let cohort = self.get(&id).unwrap().unwrap();
-            (id, cohort)
-        })
+    /// iterate over tuples of ([`CohortId`], [`Cohort`])
+    ///
+    /// skips invalid entries
+    ///
+    /// # Errors
+    ///  - if the directory cannot be read for some reason
+    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError> {
+        Ok(self
+            .cohorts_dir
+            .as_ref()
+            .read_dir()?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                // crop id from path
+                let filename = entry.file_name();
+                let id_str = Path::new(&filename).file_stem()?.to_str()?;
+                let id = CohortId::from_str(id_str).ok()?;
+                let cohort = self.get(&id).ok()??;
+                Some((id, cohort))
+            }))
     }
 }
 
@@ -437,14 +443,42 @@ mod test_cohort_manager {
 
         let mut cs_test = Vec::new();
 
-        for (id, _) in fcm.iter_cohorts() {
+        for (id, _) in fcm
+            .iter_cohorts()
+            .expect("creation of first test iterator failed")
+        {
             cs_test.push(id);
         }
+        cs.sort();
+        cs_test.sort();
         assert_eq!(
-            cs.sort(),
-            cs_test.sort(),
+            cs, cs_test,
             "cohorts added and cohorts iterated over do not match."
         );
+
+        // TEST corrupted file is skipped and does not panic the iterator
+        let corrupted_id = Uuid::new_v4();
+        let corruped_file = File::create_new(tmpdir.path().join(format!("{corrupted_id}.json")))?;
+        let mut writer = BufWriter::new(corruped_file);
+        let _ = write!(writer, "this file is not a valid cohort.json");
+        let mut cs_test = Vec::new();
+
+        for (id, _) in fcm
+            .iter_cohorts()
+            .expect("creation of second test iterator failed")
+        {
+            cs_test.push(id);
+        }
+        cs_test.sort();
+        assert_eq!(
+            cs, cs_test,
+            "cohorts added and cohorts iterated over do not match."
+        );
+        assert!(
+            !cs_test.contains(&corrupted_id),
+            "iterator should skip corrupted files"
+        );
+
         Ok(())
     }
 }

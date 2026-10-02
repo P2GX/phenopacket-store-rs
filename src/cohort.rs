@@ -262,7 +262,7 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     fn get_cohort_path(&self, id: &CohortId) -> PathBuf {
         self.cohorts_dir
             .as_ref()
-            .join(&id.to_string())
+            .join(id.to_string())
             .with_added_extension(self.codec.ext())
     }
 }

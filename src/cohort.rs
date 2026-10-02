@@ -55,6 +55,13 @@ impl From<std::io::Error> for CohortManagerError {
 //
 // COHORT MANAGER
 //
+
+/// CohortManager implements a management backend for a collection of [`Cohort`] entries.
+///
+/// A new cohort can be created and added to the manager using [`CohortManager::new_cohort`], returning the [`Uuid`] of the newly created cohort.
+/// A cohort can be retireved ([`CohortManager::get`]), updated or removed. We can also iterate over all the cohorts a CohortManager is managing using [`CohortManager::iter_cohorts`].
+///
+/// In case of non-normal execution, all methods return an [`CohortManagerError`].
 pub trait CohortManager {
     /// creates a new [`Cohort`] and adds it to the [`CohortManager`].
     ///

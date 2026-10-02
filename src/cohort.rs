@@ -56,9 +56,32 @@ impl From<std::io::Error> for CohortManagerError {
 // COHORT MANAGER
 //
 pub trait CohortManager {
+    /// creates a new [`Cohort`] and adds it to the [`CohortManager`].
+    ///
+    /// returns the Cohorts [`Uuid`].
     fn new_cohort(&self) -> Result<CohortId, CohortManagerError>;
+
+    /// gets a [`Cohort`] based on its `id`.
+    ///
+    /// returns `Ok(None)` if no Cohort was found with `id`
+    ///
+    /// # Errors
+    ///  - InvalidData: if cohort could not be read
+    ///  - Io(io::ErrorKind): if some other io error occured, for example  network issues
     fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError>;
+
+    /// write the `cohort` to be found at `id`
+    ///
+    /// # Returns
+    ///  - Ok(true): successfully updated cohort data
+    ///  - Ok(false): did not find `id`
     fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError>;
+
+    /// remove a [`Cohort`] from the [`CohortManager`], based on its `id`.
+    ///
+    /// # Returns
+    ///  - Ok(true): successfully removed cohort
+    ///  - Ok(false): cohort was not found and thus nothing removed
     fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError>;
 
     /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])

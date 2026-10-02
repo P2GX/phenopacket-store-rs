@@ -103,12 +103,14 @@ type PhenoId = Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Cohort {
+    pub description: String,
     pub members: Vec<PhenoId>,
 }
 
 impl Cohort {
     fn new() -> Cohort {
         Cohort {
+            description: String::new(),
             members: Vec::new(),
         }
     }

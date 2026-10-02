@@ -270,6 +270,7 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
 //
 // JSON COHORT CODEC
 //
+/// implements [`CohortCodec`] using [`serde_json`]. To be used in [`FileCohortManager`].
 pub struct JsonCohortCodec;
 
 impl CohortCodec for JsonCohortCodec {
@@ -290,7 +291,6 @@ impl CohortCodec for JsonCohortCodec {
     }
 }
 
-//ASK is this really a mapping we want? or should that rather be serde->CodecError? would that need to be implemented by the user, if they provide a codec with its own error type?
 impl From<serde_json::Error> for CohortManagerError {
     fn from(value: serde_json::Error) -> Self {
         match value.classify() {
@@ -305,9 +305,6 @@ impl From<serde_json::Error> for CohortManagerError {
 //
 // TESTS
 //
-#[cfg(test)]
-mod testutils {}
-
 #[cfg(test)]
 mod test_cohort_manager {
     use super::*;

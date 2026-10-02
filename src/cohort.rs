@@ -40,7 +40,7 @@ impl std::fmt::Display for CohortManagerError {
 
 impl std::error::Error for CohortManagerError {}
 
-//TODO is this done? do we want to explicitly map InvalidData and InvalidInput or not?
+//TODO is this done? do we really want to implicitly map ErrorKinds? they could mean different things depending on the context. map everything to Io(value) and handle specific cases explicitly in code?
 impl From<std::io::Error> for CohortManagerError {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
@@ -209,7 +209,7 @@ where
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(false),
                 IoErrorKind::IsADirectory => Err(CohortManagerError::InvalidData), // fs might be corrupted by external instance
-                IoErrorKind::PermissionDenied => Err(CohortManagerError::PermissionDenied), //TODO do we really want to propagate or do we want to assume we can write here and panic if not. this is prob a config error?
+                IoErrorKind::PermissionDenied => Err(CohortManagerError::PermissionDenied),
                 _ => Err(CohortManagerError::Io(e)),
             },
         }

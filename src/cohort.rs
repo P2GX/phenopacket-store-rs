@@ -117,6 +117,9 @@ pub trait CohortCodec {
 
     fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error>;
     fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
+
+    /// returns the file extention for the cohort files, the codec uses
+    fn ext(&self) -> String;
 }
 
 /// A filesystem-based implementation of the [`CohortManager`].
@@ -244,7 +247,10 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
 
     /// returns the path for a cohort file based on its id
     fn get_cohort_path(&self, id: &CohortId) -> PathBuf {
-        self.cohorts_dir.as_ref().join(format!("{id}.json"))
+        self.cohorts_dir
+            .as_ref()
+            .join(&id.to_string())
+            .with_added_extension(self.codec.ext())
     }
 }
 
@@ -264,6 +270,10 @@ impl CohortCodec for JsonCohortCodec {
     fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
         serde_json::to_writer(w, c)?;
         Ok(())
+    }
+
+    fn ext(&self) -> String {
+        String::from("json")
     }
 }
 

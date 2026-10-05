@@ -9,52 +9,35 @@ use std::{
 use serde_json::error::Category;
 use uuid::Uuid;
 
-//
-// ERRORS
-//
-/// public error type to report issues to the user of this crate
+/// The reasons why the [`CohortManager`] can fail.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum CohortManagerError {
-    AlreadyExists,
-    NotFound,
+    /// The data that should have been valid was found invalid.
+    /// For instance, a data structure was truncated, or contained a number where a string was expected.
     InvalidData,
-    InvalidInput,
-    PermissionDenied,
 
+    /// An IO-related issue that is unrelated to the main functionality of the manager.
+    /// This can be a connection error, reaching a storage quota, lack of priviledges for the action, etc.
     Io(std::io::Error),
 }
 
 impl std::fmt::Display for CohortManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound => write!(f, "Cohort not found."),
-            Self::AlreadyExists => write!(f, "Cohort already exists."),
-            Self::InvalidInput => write!(f, "Invalid input given."),
             Self::InvalidData => write!(f, "Encountered invalid data, verify data integrity."),
             Self::Io(err) => write!(f, "Ran into an issue with the CohortManager backend: {err}"),
-            err => write!(f, "{err}"),
         }
     }
 }
 
 impl std::error::Error for CohortManagerError {}
 
-//TODO is this done? do we really want to implicitly map ErrorKinds? they could mean different things depending on the context. map everything to Io(value) and handle specific cases explicitly in code?
 impl From<std::io::Error> for CohortManagerError {
     fn from(value: std::io::Error) -> Self {
-        match value.kind() {
-            std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
-            std::io::ErrorKind::NotFound => Self::NotFound,
-            std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
-            _ => Self::Io(value),
-        }
+        Self::Io(value)
     }
 }
-
-//
-// COHORT MANAGER
-//
 
 /// CohortManager implements a management backend for a collection of [`Cohort`] entries.
 ///
@@ -63,18 +46,19 @@ impl From<std::io::Error> for CohortManagerError {
 ///
 /// In case of non-normal execution, all methods return an [`CohortManagerError`].
 pub trait CohortManager {
+    // TODO: rework to `add`.
     /// creates a new [`Cohort`] and adds it to the [`CohortManager`].
     ///
     /// returns the Cohorts [`Uuid`].
     fn new_cohort(&self) -> Result<CohortId, CohortManagerError>;
 
-    /// gets a [`Cohort`] based on its `id`.
+    /// Gets a [`Cohort`] based on its `id`.
     ///
-    /// returns `Ok(None)` if no Cohort was found with `id`
+    /// Returns `Ok(None)` if no Cohort was found with `id`.
     ///
     /// # Errors
     ///  - InvalidData: if cohort could not be read
-    ///  - Io(io::ErrorKind): if some other io error occured, for example  network issues
+    ///  - Io(io::ErrorKind): if some other io error occured, for example network issues
     fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError>;
 
     /// write the `cohort` to be found at `id`
@@ -95,9 +79,6 @@ pub trait CohortManager {
     fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError>;
 }
 
-//
-// COHORT
-//
 type CohortId = Uuid;
 type PhenoId = Uuid;
 
@@ -116,10 +97,6 @@ impl Cohort {
     }
 }
 
-//
-// FILE COHORT MANAGER
-//
-
 /// provides abilities to read/write a [`Cohort`] from/to the filesystem.
 pub trait CohortCodec {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -128,7 +105,7 @@ pub trait CohortCodec {
     fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
 
     /// returns the file extention for the cohort files, the codec uses
-    fn ext(&self) -> String;
+    fn ext(&self) -> &str;
 }
 
 /// A filesystem-based implementation of the [`CohortManager`].
@@ -209,7 +186,6 @@ where
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(false),
                 IoErrorKind::IsADirectory => Err(CohortManagerError::InvalidData), // fs might be corrupted by external instance
-                IoErrorKind::PermissionDenied => Err(CohortManagerError::PermissionDenied),
                 _ => Err(CohortManagerError::Io(e)),
             },
         }
@@ -238,6 +214,35 @@ where
     }
 }
 
+/// Represents the errors that can happen during [`FileCohortManager`] configuration.
+#[derive(Debug)]
+pub enum FileCohortManagerError {
+    /// The provided path did not point to a directory.
+    NotADirectory,
+    /// Another IO-related error.
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for FileCohortManagerError {
+    fn from(value: std::io::Error) -> Self {
+        match value.kind() {
+            IoErrorKind::NotADirectory => Self::NotADirectory,
+            _ => Self::Io(value),
+        }
+    }
+}
+
+impl std::fmt::Display for FileCohortManagerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileCohortManagerError::NotADirectory => write!(f, "Not a directory"),
+            FileCohortManagerError::Io(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for FileCohortManagerError {}
+
 impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     /// Initiate a new file-based CohortManager.
     ///
@@ -248,14 +253,14 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     /// - the given path exists, but is not a directory
     /// - the path does not exist and could not be created
     ///
-    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, CohortManagerError> {
+    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortManagerError> {
         if !cohorts_dir.as_ref().exists() {
             if !cohorts_dir.as_ref().is_dir() {
                 // path exists but is not a dir
-                return Err(CohortManagerError::InvalidInput);
+                return Err(FileCohortManagerError::NotADirectory);
             }
         } else {
-            fs::create_dir_all(&cohorts_dir).map_err(CohortManagerError::Io)?;
+            fs::create_dir_all(&cohorts_dir)?;
         }
         Ok(FileCohortManager { cohorts_dir, codec })
     }
@@ -269,9 +274,6 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     }
 }
 
-//
-// JSON COHORT CODEC
-//
 /// implements [`CohortCodec`] using [`serde_json`]. To be used in [`FileCohortManager`].
 pub struct JsonCohortCodec;
 
@@ -288,18 +290,16 @@ impl CohortCodec for JsonCohortCodec {
         Ok(())
     }
 
-    fn ext(&self) -> String {
-        String::from("json")
+    fn ext(&self) -> &str {
+        "json"
     }
 }
 
 impl From<serde_json::Error> for CohortManagerError {
     fn from(value: serde_json::Error) -> Self {
         match value.classify() {
-            Category::Data => Self::InvalidData,
-            Category::Syntax => Self::InvalidInput,
+            Category::Data | Category::Syntax | Category::Eof => Self::InvalidData,
             Category::Io => Self::Io(value.into()),
-            Category::Eof => Self::Io(value.into()),
         }
     }
 }

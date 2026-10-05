@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn configure() -> Result<Box<dyn PhenoStore>, Box<dyn std::error::Error>> {
+fn configure() -> Result<Box<impl PhenoStore>, Box<dyn std::error::Error>> {
     let cfg = "db";
     match cfg {
         "db" => todo!(),

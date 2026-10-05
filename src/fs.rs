@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
+    str::FromStr,
 };
 use uuid::Uuid;
 
@@ -69,6 +70,13 @@ where
         self.dir.as_ref().join(format!("{id}.pb"))
     }
 
+    /// returns the [`Uuid`] from a given phenopacket `path`.
+    fn get_phenopacket_id(path: P) -> Option<Uuid> {
+        let id_str = path.as_ref().file_stem()?.to_str()?;
+        let id = Uuid::from_str(id_str).ok()?;
+        Some(id)
+    }
+
     pub fn ls(&self) -> Result<Vec<std::fs::DirEntry>, PhenoStoreError> {
         Ok(self
             .dir
@@ -127,6 +135,15 @@ where
     fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError> {
         let path = self.get_phenopacket_path(id);
         delete_phenopacket(&path)
+    }
+
+    fn iter_phenopackets(&self) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
+        Ok(self
+            .dir
+            .as_ref()
+            .read_dir()?
+            .filter_map(Result::ok)
+            .filter_map(|entry| FilePhenoStore::get_phenopacket_id(entry.path())))
     }
 }
 
@@ -429,5 +446,13 @@ mod test_file_pheno_store {
             &path.to_str().expect("Test path is a valid UTF-8 str"),
             &"data/67e55044-10b1-426f-9247-bb680e5fe0c8.pb"
         );
+
+        // get_phenopacket_path and get_phenopacket_id should be inverse
+        let test_inverse = FilePhenoStore::get_phenopacket_id(fps.get_phenopacket_path(&uuid))
+            .expect("should not fail when givenpath with solid id");
+        assert_eq!(
+            uuid, test_inverse,
+            "id->path and path->id should be inverse."
+        )
     }
 }

@@ -44,6 +44,14 @@ pub trait PhenoStore {
     ///
     /// Fails for reasons unrelated to normal backend functionality.
     fn remove(&self, id: &Uuid) -> Result<bool, PhenoStoreError>;
+
+    /// Iterate over all phenopackets stored in this [`PhenoStore`].
+    ///
+    /// # Errors
+    ///
+    ///  - fails if no iterator could be created
+    ///  - errors arising from a single phenopacket fail *silently* i.e. erronous entries are ignored.
+    fn iter_phenopackets(&self) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError>;
 }
 
 impl<T> PhenoStore for &T
@@ -64,6 +72,10 @@ where
 
     fn get(&self, id: &Uuid) -> Result<Option<Phenopacket>, PhenoStoreError> {
         (*self).get(id)
+    }
+
+    fn iter_phenopackets(&self) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
+        (*self).iter_phenopackets()
     }
 }
 

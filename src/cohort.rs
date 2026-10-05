@@ -200,10 +200,7 @@ where
             .read_dir()?
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| {
-                // crop id from path
-                let filename = entry.file_name();
-                let id_str = Path::new(&filename).file_stem()?.to_str()?;
-                let id = CohortId::from_str(id_str).ok()?;
+                let id = Self::get_cohort_id(&entry.path()).ok()?;
                 let cohort = self.get(&id).ok()??;
                 Some((id, cohort))
             }))
@@ -267,6 +264,15 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
             .as_ref()
             .join(id.to_string())
             .with_added_extension(self.codec.ext())
+    }
+
+    /// extracts the [`Uuid`] from a [`Cohort`] path.
+    fn get_cohort_id(path: &Path) -> Result<Uuid, uuid::Error> {
+        let id_str = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        Uuid::from_str(id_str)
     }
 }
 

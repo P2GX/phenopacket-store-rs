@@ -41,16 +41,13 @@ impl From<std::io::Error> for CohortManagerError {
 
 /// CohortManager implements a management backend for a collection of [`Cohort`] entries.
 ///
-/// A new cohort can be created and added to the manager using [`CohortManager::new_cohort`], returning the [`Uuid`] of the newly created cohort.
+/// A new cohort can be added to the manager using [`CohortManager::add`], returning the [`Uuid`] of the newly created cohort.
 /// A cohort can be retireved ([`CohortManager::get`]), updated or removed. We can also iterate over all the cohorts a CohortManager is managing using [`CohortManager::iter_cohorts`].
 ///
-/// In case of non-normal execution, all methods return an [`CohortManagerError`].
+/// In case of non-normal execution, all methods return a [`CohortManagerError`].
 pub trait CohortManager {
-    // TODO: rework to `add`.
-    /// creates a new [`Cohort`] and adds it to the [`CohortManager`].
-    ///
-    /// returns the Cohorts [`Uuid`].
-    fn new_cohort(&self) -> Result<CohortId, CohortManagerError>;
+    /// add a [`Cohort`] to the [`CohortManager`] and return its [`Uuid`].
+    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError>;
 
     /// Gets a [`Cohort`] based on its `id`.
     ///
@@ -120,14 +117,13 @@ where
     C: CohortCodec,
     C::Error: Into<CohortManagerError>,
 {
-    fn new_cohort(&self) -> Result<CohortId, CohortManagerError> {
-        let cohort = Cohort::new();
+    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError> {
         let id = CohortId::new_v4();
         let path = self.get_cohort_path(&id);
         let mut writer = BufWriter::new(fs::File::create(&path)?);
 
         // write the new (empty) cohort state to file
-        let _ = self.codec.write(&cohort, &mut writer).map_err(|e| {
+        let _ = self.codec.write(cohort, &mut writer).map_err(|e| {
             fs::remove_file(&path).unwrap();
             e.into()
         });
@@ -340,33 +336,37 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_new_cohort_get() -> Result<(), CohortManagerError> {
+    fn test_add_get() -> Result<(), CohortManagerError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
 
-        //test new_cohort()
-        let id1 = fcm.new_cohort().expect("adding a first cohort should work");
-        let id2 = fcm.new_cohort().expect("adding second cohort should work");
+        //test add
+        let mut c1 = Cohort::new();
+        c1.description = String::from("cohort #1");
+        let id1 = fcm.add(&c1).expect("adding a first cohort should work");
+        let mut c2 = Cohort::new();
+        c2.description = String::from("cohort #2");
+        let id2 = fcm.add(&c2).expect("adding second cohort should work");
 
         // test get success
-        let c1 = fcm.get(&id1);
-        assert_matches!(c1, Ok(Some(_)));
-        let c2 = fcm.get(&id2);
-        assert_matches!(c2, Ok(Some(_)));
-        let c11 = fcm.get(&id1);
+        let c1_get = fcm.get(&id1);
+        assert_matches!(c1_get, Ok(Some(_)));
+        let c2_get = fcm.get(&id2);
+        assert_matches!(c2_get, Ok(Some(_)));
+        let c1_get_again = fcm.get(&id1);
         assert_matches!(
-            c11,
+            c1_get_again,
             Ok(Some(_)),
             "should be able to get the same cohort multiple times."
         );
 
         // test get fail
         let non_existent_id = Uuid::new_v4();
-        let c3 = fcm.get(&non_existent_id);
+        let non_existent_get = fcm.get(&non_existent_id);
         assert_matches!(
-            c3,
+            non_existent_get,
             Ok(None),
             "lookup of non existing id should return Ok(None)"
         );
@@ -380,9 +380,9 @@ mod test_cohort_manager {
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
-        let c1 = fcm.new_cohort()?;
-        let c2 = fcm.new_cohort()?;
-        let c3 = fcm.new_cohort()?;
+        let c1 = fcm.add(&Cohort::new())?;
+        let c2 = fcm.add(&Cohort::new())?;
+        let c3 = fcm.add(&Cohort::new())?;
         assert_matches!(fcm.get(&c1), Ok(Some(_)));
         assert_matches!(fcm.get(&c2), Ok(Some(_)));
         assert_matches!(fcm.get(&c3), Ok(Some(_)));
@@ -413,7 +413,7 @@ mod test_cohort_manager {
             .expect("initiation on temp dir and json codec to succeed.");
 
         // test
-        let id1 = fcm.new_cohort()?;
+        let id1 = fcm.add(&Cohort::new())?;
         let mut c2 = Cohort::new();
         c2.members.push(Uuid::new_v4());
 
@@ -442,9 +442,9 @@ mod test_cohort_manager {
         let tmpdir = tempfile::TempDir::new()?;
         let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
-        let c1 = fcm.new_cohort()?;
-        let c2 = fcm.new_cohort()?;
-        let c3 = fcm.new_cohort()?;
+        let c1 = fcm.add(&Cohort::new())?;
+        let c2 = fcm.add(&Cohort::new())?;
+        let c3 = fcm.add(&Cohort::new())?;
         let mut cs = vec![c1, c2, c3];
 
         let mut cs_test = Vec::new();

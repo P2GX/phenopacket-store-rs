@@ -10,7 +10,7 @@ use uuid::Uuid;
 use phenopackets::schema::v2::Phenopacket;
 use prost::Message;
 
-use crate::core::{PhenoStore, PhenoStoreError};
+use super::*;
 
 /// The reasons why creating of a [`FilePhenoStore`] can fail.
 #[derive(Debug)]
@@ -207,7 +207,7 @@ pub(crate) mod testutils {
     use std::{fs, path::Path};
     use tempfile;
 
-    use crate::fs::*;
+    use super::*;
 
     /// get a temporary copy of the provided file. the copy will be deleted once the filehandle is dropped.
     pub fn tmpfilecopy_from(path: &str) -> std::io::Result<tempfile::NamedTempFile> {

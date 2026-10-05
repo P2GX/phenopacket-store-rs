@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
@@ -9,90 +8,7 @@ use std::{
 use serde_json::error::Category;
 use uuid::Uuid;
 
-/// The reasons why the [`CohortManager`] can fail.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum CohortManagerError {
-    /// The data that should have been valid was found invalid.
-    /// For instance, a data structure was truncated, or contained a number where a string was expected.
-    InvalidData,
-
-    /// An IO-related issue that is unrelated to the main functionality of the manager.
-    /// This can be a connection error, reaching a storage quota, lack of priviledges for the action, etc.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for CohortManagerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidData => write!(f, "Encountered invalid data, verify data integrity."),
-            Self::Io(err) => write!(f, "Ran into an issue with the CohortManager backend: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for CohortManagerError {}
-
-impl From<std::io::Error> for CohortManagerError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-/// CohortManager implements a management backend for a collection of [`Cohort`] entries.
-///
-/// A new cohort can be added to the manager using [`CohortManager::add`], returning the [`Uuid`] of the newly created cohort.
-/// A cohort can be retireved ([`CohortManager::get`]), updated or removed. We can also iterate over all the cohorts a CohortManager is managing using [`CohortManager::iter_cohorts`].
-///
-/// In case of non-normal execution, all methods return a [`CohortManagerError`].
-pub trait CohortManager {
-    /// add a [`Cohort`] to the [`CohortManager`] and return its [`Uuid`].
-    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError>;
-
-    /// Gets a [`Cohort`] based on its `id`.
-    ///
-    /// Returns `Ok(None)` if no Cohort was found with `id`.
-    ///
-    /// # Errors
-    ///  - InvalidData: if cohort could not be read
-    ///  - Io(io::ErrorKind): if some other io error occured, for example network issues
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError>;
-
-    /// write the `cohort` to be found at `id`
-    ///
-    /// # Returns
-    ///  - Ok(true): successfully updated cohort data
-    ///  - Ok(false): did not find `id`
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError>;
-
-    /// remove a [`Cohort`] from the [`CohortManager`], based on its `id`.
-    ///
-    /// # Returns
-    ///  - Ok(true): successfully removed cohort
-    ///  - Ok(false): cohort was not found and thus nothing removed
-    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError>;
-
-    /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])
-    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError>;
-}
-
-type CohortId = Uuid;
-type PhenoId = Uuid;
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct Cohort {
-    pub description: String,
-    pub members: Vec<PhenoId>,
-}
-
-impl Cohort {
-    fn new() -> Cohort {
-        Cohort {
-            description: String::new(),
-            members: Vec::new(),
-        }
-    }
-}
+use super::*;
 
 /// provides abilities to read/write a [`Cohort`] from/to the filesystem.
 pub trait CohortCodec {
@@ -117,8 +33,8 @@ where
     C: CohortCodec,
     C::Error: Into<CohortManagerError>,
 {
-    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError> {
-        let id = CohortId::new_v4();
+    fn add(&self, cohort: &Cohort) -> Result<Uuid, CohortManagerError> {
+        let id = Uuid::new_v4();
         let path = self.get_cohort_path(&id);
         let mut writer = BufWriter::new(fs::File::create(&path)?);
 
@@ -131,7 +47,7 @@ where
         Ok(id)
     }
 
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError> {
+    fn get(&self, id: &Uuid) -> Result<Option<Cohort>, CohortManagerError> {
         let path = self.get_cohort_path(id);
         match File::open(path) {
             Ok(file) => {
@@ -149,7 +65,7 @@ where
         }
     }
 
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError> {
+    fn update(&self, id: &Uuid, cohort: &Cohort) -> Result<bool, CohortManagerError> {
         let cohort_file = self.get_cohort_path(id);
         if !cohort_file.exists() {
             return Ok(false);
@@ -175,7 +91,7 @@ where
         }
     }
 
-    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError> {
+    fn remove(&self, id: &Uuid) -> Result<bool, CohortManagerError> {
         let path = self.get_cohort_path(id);
         match fs::remove_file(&path) {
             Ok(_) => Ok(true),
@@ -187,13 +103,13 @@ where
         }
     }
 
-    /// iterate over tuples of ([`CohortId`], [`Cohort`])
+    /// iterate over tuples of ([`Uuid`], [`Cohort`])
     ///
     /// skips invalid entries
     ///
     /// # Errors
     ///  - if the directory cannot be read for some reason
-    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError> {
+    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (Uuid, Cohort)>, CohortManagerError> {
         Ok(self
             .cohorts_dir
             .as_ref()
@@ -259,7 +175,7 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     }
 
     /// returns the path for a cohort file based on its id
-    fn get_cohort_path(&self, id: &CohortId) -> PathBuf {
+    fn get_cohort_path(&self, id: &Uuid) -> PathBuf {
         self.cohorts_dir
             .as_ref()
             .join(id.to_string())

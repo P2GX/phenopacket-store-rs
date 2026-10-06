@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{BufRead, BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
+    io::{BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -8,18 +8,8 @@ use std::{
 use serde_json::error::Category;
 use uuid::Uuid;
 
-use super::*;
-
-/// provides abilities to read/write a [`Cohort`] from/to the filesystem.
-pub trait CohortCodec {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error>;
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
-
-    /// returns the file extention for the cohort files, the codec uses
-    fn ext(&self) -> &str;
-}
+use super::codec::CohortCodec;
+use super::{Cohort, CohortManager, CohortManagerError};
 
 /// A filesystem-based implementation of the [`CohortManager`].
 pub struct FileCohortManager<P, C> {
@@ -152,7 +142,10 @@ impl std::fmt::Display for FileCohortManagerError {
 
 impl std::error::Error for FileCohortManagerError {}
 
-impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
+impl<P, C> FileCohortManager<P, C>
+where
+    P: AsRef<Path>,
+{
     /// Initiate a new file-based CohortManager.
     ///
     /// Will either open the given `dir` as [`FileCohortManager`], or attempt to create a directory at `dir` if it does not exist.
@@ -174,14 +167,6 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
         Ok(FileCohortManager { cohorts_dir, codec })
     }
 
-    /// returns the path for a cohort file based on its id
-    fn get_cohort_path(&self, id: &Uuid) -> PathBuf {
-        self.cohorts_dir
-            .as_ref()
-            .join(id.to_string())
-            .with_added_extension(self.codec.ext())
-    }
-
     /// extracts the [`Uuid`] from a [`Cohort`] path.
     fn get_cohort_id(path: &Path) -> Result<Uuid, uuid::Error> {
         let id_str = path
@@ -192,24 +177,17 @@ impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
     }
 }
 
-/// implements [`CohortCodec`] using [`serde_json`]. To be used in [`FileCohortManager`].
-pub struct JsonCohortCodec;
-
-impl CohortCodec for JsonCohortCodec {
-    type Error = serde_json::Error;
-
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error> {
-        let c: Cohort = serde_json::from_reader(r)?;
-        Ok(c)
-    }
-
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
-        serde_json::to_writer(w, c)?;
-        Ok(())
-    }
-
-    fn ext(&self) -> &str {
-        "json"
+impl<P, C> FileCohortManager<P, C>
+where
+    P: AsRef<Path>,
+    C: CohortCodec,
+{
+    /// returns the path for a cohort file based on its id
+    fn get_cohort_path(&self, id: &Uuid) -> PathBuf {
+        self.cohorts_dir
+            .as_ref()
+            .join(id.to_string())
+            .with_added_extension(self.codec.ext())
     }
 }
 
@@ -222,14 +200,18 @@ impl From<serde_json::Error> for CohortManagerError {
     }
 }
 
-//
-// TESTS
-//
 #[cfg(test)]
 mod test_cohort_manager {
-    use super::*;
+
+    use super::super::codec::JsonCohortCodec;
+    use super::super::{Cohort, CohortManager, CohortManagerError};
+    use super::FileCohortManager;
     use std::assert_matches;
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+    use std::path::Path;
     use tempfile;
+    use uuid::Uuid;
 
     #[test]
     fn test_new() {

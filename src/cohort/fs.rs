@@ -5,7 +5,6 @@ use std::{
     str::FromStr,
 };
 
-use serde_json::error::Category;
 use uuid::Uuid;
 
 use super::codec::CohortCodec;
@@ -113,35 +112,6 @@ where
     }
 }
 
-/// Represents the errors that can happen during [`FileCohortManager`] configuration.
-#[derive(Debug)]
-pub enum FileCohortManagerError {
-    /// The provided path did not point to a directory.
-    NotADirectory,
-    /// Another IO-related error.
-    Io(std::io::Error),
-}
-
-impl From<std::io::Error> for FileCohortManagerError {
-    fn from(value: std::io::Error) -> Self {
-        match value.kind() {
-            IoErrorKind::NotADirectory => Self::NotADirectory,
-            _ => Self::Io(value),
-        }
-    }
-}
-
-impl std::fmt::Display for FileCohortManagerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FileCohortManagerError::NotADirectory => write!(f, "Not a directory"),
-            FileCohortManagerError::Io(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for FileCohortManagerError {}
-
 impl<P, C> FileCohortManager<P, C>
 where
     P: AsRef<Path>,
@@ -191,15 +161,41 @@ where
     }
 }
 
-impl From<serde_json::Error> for CohortManagerError {
-    fn from(value: serde_json::Error) -> Self {
-        match value.classify() {
-            Category::Data | Category::Syntax | Category::Eof => Self::InvalidData,
-            Category::Io => Self::Io(value.into()),
+//
+// ERRORS
+//
+/// Represents the errors that can happen during [`FileCohortManager`] configuration.
+#[derive(Debug)]
+pub enum FileCohortManagerError {
+    /// The provided path did not point to a directory.
+    NotADirectory,
+    /// Another IO-related error.
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for FileCohortManagerError {
+    fn from(value: std::io::Error) -> Self {
+        match value.kind() {
+            IoErrorKind::NotADirectory => Self::NotADirectory,
+            _ => Self::Io(value),
         }
     }
 }
 
+impl std::fmt::Display for FileCohortManagerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileCohortManagerError::NotADirectory => write!(f, "Not a directory"),
+            FileCohortManagerError::Io(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for FileCohortManagerError {}
+
+//
+// TESTS
+//
 #[cfg(test)]
 mod test_cohort_manager {
 

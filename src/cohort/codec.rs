@@ -1,6 +1,7 @@
+use serde_json::error::Category;
 use std::io::{BufRead, Write};
 
-use super::Cohort;
+use super::{Cohort, CohortManagerError};
 
 /// Implementors support reading/writing of a [`Cohort`] from/to IO streams
 /// in a particular data format (e.g. JSON).
@@ -78,5 +79,14 @@ impl CohortCodec for JsonCohortCodec {
 
     fn ext(&self) -> &str {
         "json"
+    }
+}
+
+impl From<serde_json::Error> for CohortManagerError {
+    fn from(value: serde_json::Error) -> Self {
+        match value.classify() {
+            Category::Data | Category::Syntax | Category::Eof => Self::InvalidData,
+            Category::Io => Self::Io(value.into()),
+        }
     }
 }

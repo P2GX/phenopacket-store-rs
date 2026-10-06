@@ -1,7 +1,13 @@
 [package]
-name = "psrepo"
-version = "0.1.0-dev0"
+name = "ppktstore"
+version = "0.1.0"
 edition = "2024"
+description = "A storage interface for Phenopackets."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/P2GX/phenopacket-store-rs"
+keywords = ["phenopacket", "phenopackets", "gagh"]
+authors = ["Niclas Casimir Grote", "Daniel Danis"]
+
 
 [dependencies]
 phenopackets = "0.2.2-post2"

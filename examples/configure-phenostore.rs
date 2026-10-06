@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use psrepo::phenopacket::{PhenoStore, fs::FilePhenoStore};
+use ppktstore::phenopacket::{PhenoStore, fs::FilePhenoStore};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ps = configure()?;

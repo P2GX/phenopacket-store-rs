@@ -1,6 +1,4 @@
+/// Routines for creating, updating and persisting phenopacket cohorts.
 pub mod cohort;
-mod core;
-pub mod fs;
-
-// re-exports
-pub use core::{IoErrorKind, PhenoStore, PhenoStoreError};
+/// Phenopacket persistence backends.
+pub mod phenopacket;

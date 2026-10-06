@@ -1,109 +1,14 @@
-use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
-    io::{BufRead, BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
+    io::{BufReader, BufWriter, ErrorKind as IoErrorKind, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use serde_json::error::Category;
 use uuid::Uuid;
 
-/// The reasons why the [`CohortManager`] can fail.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum CohortManagerError {
-    /// The data that should have been valid was found invalid.
-    /// For instance, a data structure was truncated, or contained a number where a string was expected.
-    InvalidData,
-
-    /// An IO-related issue that is unrelated to the main functionality of the manager.
-    /// This can be a connection error, reaching a storage quota, lack of priviledges for the action, etc.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for CohortManagerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidData => write!(f, "Encountered invalid data, verify data integrity."),
-            Self::Io(err) => write!(f, "Ran into an issue with the CohortManager backend: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for CohortManagerError {}
-
-impl From<std::io::Error> for CohortManagerError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-/// CohortManager implements a management backend for a collection of [`Cohort`] entries.
-///
-/// A new cohort can be added to the manager using [`CohortManager::add`], returning the [`Uuid`] of the newly created cohort.
-/// A cohort can be retireved ([`CohortManager::get`]), updated or removed. We can also iterate over all the cohorts a CohortManager is managing using [`CohortManager::iter_cohorts`].
-///
-/// In case of non-normal execution, all methods return a [`CohortManagerError`].
-pub trait CohortManager {
-    /// add a [`Cohort`] to the [`CohortManager`] and return its [`Uuid`].
-    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError>;
-
-    /// Gets a [`Cohort`] based on its `id`.
-    ///
-    /// Returns `Ok(None)` if no Cohort was found with `id`.
-    ///
-    /// # Errors
-    ///  - InvalidData: if cohort could not be read
-    ///  - Io(io::ErrorKind): if some other io error occured, for example network issues
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError>;
-
-    /// write the `cohort` to be found at `id`
-    ///
-    /// # Returns
-    ///  - Ok(true): successfully updated cohort data
-    ///  - Ok(false): did not find `id`
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError>;
-
-    /// remove a [`Cohort`] from the [`CohortManager`], based on its `id`.
-    ///
-    /// # Returns
-    ///  - Ok(true): successfully removed cohort
-    ///  - Ok(false): cohort was not found and thus nothing removed
-    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError>;
-
-    /// iterate over Cohorts as tuples of ([`Uuid`], [`Cohort`])
-    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError>;
-}
-
-type CohortId = Uuid;
-type PhenoId = Uuid;
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct Cohort {
-    pub description: String,
-    pub members: Vec<PhenoId>,
-}
-
-impl Cohort {
-    fn new() -> Cohort {
-        Cohort {
-            description: String::new(),
-            members: Vec::new(),
-        }
-    }
-}
-
-/// provides abilities to read/write a [`Cohort`] from/to the filesystem.
-pub trait CohortCodec {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error>;
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error>;
-
-    /// returns the file extention for the cohort files, the codec uses
-    fn ext(&self) -> &str;
-}
+use super::codec::CohortCodec;
+use super::{Cohort, CohortManager, CohortManagerError};
 
 /// A filesystem-based implementation of the [`CohortManager`].
 pub struct FileCohortManager<P, C> {
@@ -117,8 +22,8 @@ where
     C: CohortCodec,
     C::Error: Into<CohortManagerError>,
 {
-    fn add(&self, cohort: &Cohort) -> Result<CohortId, CohortManagerError> {
-        let id = CohortId::new_v4();
+    fn add(&self, cohort: &Cohort) -> Result<Uuid, CohortManagerError> {
+        let id = Uuid::new_v4();
         let path = self.get_cohort_path(&id);
         let mut writer = BufWriter::new(fs::File::create(&path)?);
 
@@ -131,7 +36,7 @@ where
         Ok(id)
     }
 
-    fn get(&self, id: &CohortId) -> Result<Option<Cohort>, CohortManagerError> {
+    fn get(&self, id: &Uuid) -> Result<Option<Cohort>, CohortManagerError> {
         let path = self.get_cohort_path(id);
         match File::open(path) {
             Ok(file) => {
@@ -149,7 +54,7 @@ where
         }
     }
 
-    fn update(&self, id: &CohortId, cohort: &Cohort) -> Result<bool, CohortManagerError> {
+    fn update(&self, id: &Uuid, cohort: &Cohort) -> Result<bool, CohortManagerError> {
         let cohort_file = self.get_cohort_path(id);
         if !cohort_file.exists() {
             return Ok(false);
@@ -175,7 +80,7 @@ where
         }
     }
 
-    fn remove(&self, id: &CohortId) -> Result<bool, CohortManagerError> {
+    fn remove(&self, id: &Uuid) -> Result<bool, CohortManagerError> {
         let path = self.get_cohort_path(id);
         match fs::remove_file(&path) {
             Ok(_) => Ok(true),
@@ -187,13 +92,13 @@ where
         }
     }
 
-    /// iterate over tuples of ([`CohortId`], [`Cohort`])
+    /// iterate over tuples of ([`Uuid`], [`Cohort`])
     ///
     /// skips invalid entries
     ///
     /// # Errors
     ///  - if the directory cannot be read for some reason
-    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (CohortId, Cohort)>, CohortManagerError> {
+    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (Uuid, Cohort)>, CohortManagerError> {
         Ok(self
             .cohorts_dir
             .as_ref()
@@ -207,6 +112,58 @@ where
     }
 }
 
+impl<P, C> FileCohortManager<P, C>
+where
+    P: AsRef<Path>,
+{
+    /// Initiate a new file-based CohortManager.
+    ///
+    /// Will either open the given `dir` as [`FileCohortManager`], or attempt to create a directory at `dir` if it does not exist.
+    ///
+    /// # Errors
+    ///
+    /// - the given path exists, but is not a directory
+    /// - the path does not exist and could not be created
+    ///
+    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortManagerError> {
+        if !cohorts_dir.as_ref().exists() {
+            if !cohorts_dir.as_ref().is_dir() {
+                // path exists but is not a dir
+                return Err(FileCohortManagerError::NotADirectory);
+            }
+        } else {
+            fs::create_dir_all(&cohorts_dir)?;
+        }
+        Ok(FileCohortManager { cohorts_dir, codec })
+    }
+
+    /// extracts the [`Uuid`] from a [`Cohort`] path.
+    fn get_cohort_id(path: &Path) -> Result<Uuid, uuid::Error> {
+        let id_str = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        Uuid::from_str(id_str)
+    }
+}
+
+impl<P, C> FileCohortManager<P, C>
+where
+    P: AsRef<Path>,
+    C: CohortCodec,
+{
+    /// returns the path for a cohort file based on its id
+    fn get_cohort_path(&self, id: &Uuid) -> PathBuf {
+        self.cohorts_dir
+            .as_ref()
+            .join(id.to_string())
+            .with_added_extension(self.codec.ext())
+    }
+}
+
+//
+// ERRORS
+//
 /// Represents the errors that can happen during [`FileCohortManager`] configuration.
 #[derive(Debug)]
 pub enum FileCohortManagerError {
@@ -236,84 +193,21 @@ impl std::fmt::Display for FileCohortManagerError {
 
 impl std::error::Error for FileCohortManagerError {}
 
-impl<P: AsRef<Path>, C: CohortCodec> FileCohortManager<P, C> {
-    /// Initiate a new file-based CohortManager.
-    ///
-    /// Will either open the given `dir` as [`FileCohortManager`], or attempt to create a directory at `dir` if it does not exist.
-    ///
-    /// # Errors
-    ///
-    /// - the given path exists, but is not a directory
-    /// - the path does not exist and could not be created
-    ///
-    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortManagerError> {
-        if !cohorts_dir.as_ref().exists() {
-            if !cohorts_dir.as_ref().is_dir() {
-                // path exists but is not a dir
-                return Err(FileCohortManagerError::NotADirectory);
-            }
-        } else {
-            fs::create_dir_all(&cohorts_dir)?;
-        }
-        Ok(FileCohortManager { cohorts_dir, codec })
-    }
-
-    /// returns the path for a cohort file based on its id
-    fn get_cohort_path(&self, id: &CohortId) -> PathBuf {
-        self.cohorts_dir
-            .as_ref()
-            .join(id.to_string())
-            .with_added_extension(self.codec.ext())
-    }
-
-    /// extracts the [`Uuid`] from a [`Cohort`] path.
-    fn get_cohort_id(path: &Path) -> Result<Uuid, uuid::Error> {
-        let id_str = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("");
-        Uuid::from_str(id_str)
-    }
-}
-
-/// implements [`CohortCodec`] using [`serde_json`]. To be used in [`FileCohortManager`].
-pub struct JsonCohortCodec;
-
-impl CohortCodec for JsonCohortCodec {
-    type Error = serde_json::Error;
-
-    fn read<R: BufRead>(&self, r: &mut R) -> Result<Cohort, Self::Error> {
-        let c: Cohort = serde_json::from_reader(r)?;
-        Ok(c)
-    }
-
-    fn write<W: Write>(&self, c: &Cohort, w: &mut W) -> Result<(), Self::Error> {
-        serde_json::to_writer(w, c)?;
-        Ok(())
-    }
-
-    fn ext(&self) -> &str {
-        "json"
-    }
-}
-
-impl From<serde_json::Error> for CohortManagerError {
-    fn from(value: serde_json::Error) -> Self {
-        match value.classify() {
-            Category::Data | Category::Syntax | Category::Eof => Self::InvalidData,
-            Category::Io => Self::Io(value.into()),
-        }
-    }
-}
-
 //
 // TESTS
 //
 #[cfg(test)]
 mod test_cohort_manager {
-    use super::*;
+
+    use super::super::codec::JsonCohortCodec;
+    use super::super::{Cohort, CohortManager, CohortManagerError};
+    use super::FileCohortManager;
     use std::assert_matches;
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+    use std::path::Path;
     use tempfile;
+    use uuid::Uuid;
 
     #[test]
     fn test_new() {

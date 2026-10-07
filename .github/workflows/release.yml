@@ -5,7 +5,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # environment: release  # Optional: for enhanced security
+    environment: release
     permissions:
       id-token: write     # Required for OIDC token exchange
     steps:

@@ -1,7 +1,7 @@
 name: Publish to crates.io
 on:
   push:
-    tags: ['v*']  # Triggers when pushing tags starting with 'v'
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']  # Triggers when pushing semantic versioning tags
 jobs:
   publish:
     runs-on: ubuntu-latest

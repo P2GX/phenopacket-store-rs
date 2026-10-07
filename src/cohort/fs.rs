@@ -11,6 +11,7 @@ use super::codec::CohortCodec;
 use super::{Cohort, CohortManager, CohortManagerError};
 
 /// A filesystem-based implementation of the [`CohortManager`].
+#[derive(Debug)]
 pub struct FileCohortManager<P, C> {
     cohorts_dir: P,
     codec: C,
@@ -126,7 +127,7 @@ where
     /// - the path does not exist and could not be created
     ///
     pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortManagerError> {
-        if !cohorts_dir.as_ref().exists() {
+        if cohorts_dir.as_ref().exists() {
             if !cohorts_dir.as_ref().is_dir() {
                 // path exists but is not a dir
                 return Err(FileCohortManagerError::NotADirectory);
@@ -211,10 +212,24 @@ mod test_cohort_manager {
 
     #[test]
     fn test_new() {
-        // setup
+        // TEST SUCCESS: existing, empty dir
         let tmpdir = tempfile::TempDir::new().expect("creation of tempdir should work.");
         let _ = FileCohortManager::new(&tmpdir, JsonCohortCodec)
-            .expect("initiation on temp dir and json codec to succeed.");
+            .expect("initiation on existing temp dir and json codec to succeed.");
+
+        // TEST SUCCESS: the dir does not exist but we are able to create it.
+        let tmpdir_nonexist = tmpdir.path().join("non-existent-dir");
+        let _ = FileCohortManager::new(&tmpdir_nonexist, JsonCohortCodec)
+            .expect("we should be able to create a dir (in this tmpdir) if it does not exist.");
+
+        // TEST FAIL: the path exists but is not a dir
+        let file = tempfile::NamedTempFile::new().expect("should be able to create temp files");
+        let test_not_a_dir = FileCohortManager::new(file.path(), JsonCohortCodec);
+        assert_matches!(
+            test_not_a_dir,
+            Err(_),
+            "trying to create a FileCohortManager on a file instead of a dir did not fail as expected."
+        );
     }
 
     #[test]

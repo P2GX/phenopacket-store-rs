@@ -62,6 +62,7 @@ where
 }
 
 /// implements [`CohortCodec`] using [`serde_json`].
+#[derive(Debug)]
 pub struct JsonCohortCodec;
 
 impl CohortCodec for JsonCohortCodec {

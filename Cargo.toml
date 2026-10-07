@@ -5,9 +5,8 @@ edition = "2024"
 description = "A storage interface for Phenopackets."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/P2GX/phenopacket-store-rs"
-keywords = ["phenopacket", "phenopackets", "gagh"]
+keywords = ["phenopacket", "phenopackets", "ga4gh", "storage"]
 authors = ["Niclas Casimir Grote", "Daniel Danis"]
-
 
 [dependencies]
 phenopackets = "0.2.2-post2"

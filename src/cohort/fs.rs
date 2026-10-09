@@ -243,7 +243,10 @@ mod test_cohort_manager {
             .parse()
             .expect("valid UUID");
         let cohort_path = fcm.get_cohort_path(&id);
-        assert_eq!(cohort_path, Path::new("data/67e55044-10b1-426f-9247-bb680e5fe0c8.json"))
+        assert_eq!(
+            cohort_path,
+            Path::new("data/67e55044-10b1-426f-9247-bb680e5fe0c8.json")
+        )
     }
 
     #[test]

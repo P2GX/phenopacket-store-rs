@@ -219,7 +219,7 @@ pub(crate) mod testutils {
 
     /// create a new example phenopacket from data/phenopacket.pb
     pub fn example_phenopacket() -> Phenopacket {
-        read_phenopacket(Path::new("data/phenopacket.pb"))
+        read_phenopacket(&Path::new("data").join("phenopacket.pb"))
             .expect("Test phenopacket should be present in the repo")
             .expect("Test phenopacket should be present in the repo")
     }
@@ -242,7 +242,7 @@ mod test_core {
     #[test]
     fn test_read_phenopacket() {
         let path = Path::new("data/phenopacket.pb");
-        let pp = read_phenopacket(path);
+        let pp = read_phenopacket(&path);
 
         let pp = pp.expect("The phenopacket file should be well formatted");
         let pp = pp.expect("The phenopacket file should be present in the repo");
@@ -443,8 +443,8 @@ mod test_file_pheno_store {
         let path = fps.get_phenopacket_path(&uuid);
 
         assert_eq!(
-            &path.to_str().expect("Test path is a valid UTF-8 str"),
-            &"data/67e55044-10b1-426f-9247-bb680e5fe0c8.pb"
+            path,
+            Path::new("data").join("67e55044-10b1-426f-9247-bb680e5fe0c8.pb")
         );
 
         // get_phenopacket_path and get_phenopacket_id should be inverse

@@ -22,6 +22,18 @@ where
     }
 }
 
+impl<T, V> Query<V> for Box<T>
+where
+    T: Query<V>,
+    V: ?Sized,
+{
+    fn test(&self, item: &V) -> bool {
+        (**self).test(item)
+    }
+}
+
+/* Boolean algebra */
+
 pub struct AndQuery<P, R>(pub P, pub R);
 
 impl<P, R> AndQuery<P, R> {
@@ -80,10 +92,18 @@ where
 
 #[macro_export]
 macro_rules! impl_bool_algebra {
-    // Match generic queries
+    // Match the generic queries
     ( $ty:ident < $( $gen:tt ),+ > ) => {
         impl<$($gen)+, P> std::ops::BitAnd<P> for $ty<$($gen)+> {
             type Output = $crate::query::AndQuery<$ty<$($gen)+>, P>;
+
+            fn bitand(self, rhs: P) -> Self::Output {
+                $crate::query::AndQuery::new(self, rhs)
+            }
+        }
+
+        impl<'_ref_, $($gen)+, P> std::ops::BitAnd<P> for &'_ref_ $ty<$($gen)+> {
+            type Output = $crate::query::AndQuery<&'_ref_ $ty<$($gen)+>, P>;
 
             fn bitand(self, rhs: P) -> Self::Output {
                 $crate::query::AndQuery::new(self, rhs)
@@ -98,6 +118,14 @@ macro_rules! impl_bool_algebra {
             }
         }
 
+        impl<'_ref_, $($gen)+, P> std::ops::BitOr<P> for &'_ref_ $ty<$($gen)+> {
+            type Output = $crate::query::OrQuery<&'_ref_ $ty<$($gen)+>, P>;
+
+            fn bitor(self, rhs: P) -> Self::Output {
+                $crate::query::OrQuery::new(self, rhs)
+            }
+        }
+
         impl<$($gen)+,> std::ops::Not for $ty<$($gen)+> {
             type Output = $crate::query::NotQuery<$ty<$($gen)+>>;
 
@@ -105,11 +133,28 @@ macro_rules! impl_bool_algebra {
                 $crate::query::NotQuery::new(self)
             }
         }
+
+        impl<'_ref_, $($gen)+,> std::ops::Not for &'_ref_ $ty<$($gen)+> {
+            type Output = $crate::query::NotQuery<&'_ref_ $ty<$($gen)+>>;
+
+            fn not(self) -> Self::Output {
+                $crate::query::NotQuery::new(self)
+            }
+        }
     };
-    // Non-generic types
+
+    // Match the non-generic types
     ( $ty:ident ) => {
         impl<P> std::ops::BitAnd<P> for $ty {
             type Output = $crate::query::AndQuery<$ty, P>;
+
+            fn bitand(self, rhs: P) -> Self::Output {
+                $crate::query::AndQuery::new(self, rhs)
+            }
+        }
+
+        impl<'a, P> std::ops::BitAnd<P> for &'a $ty {
+            type Output = $crate::query::AndQuery<&'a $ty, P>;
 
             fn bitand(self, rhs: P) -> Self::Output {
                 $crate::query::AndQuery::new(self, rhs)
@@ -124,17 +169,24 @@ macro_rules! impl_bool_algebra {
             }
         }
 
-        impl<P> std::ops::BitOr<P> for &$ty where $ty: Clone {
-            type Output = $crate::query::OrQuery<$ty, P>;
+        impl<'a, P> std::ops::BitOr<P> for &'a $ty {
+            type Output = $crate::query::OrQuery<&'a $ty, P>;
 
             fn bitor(self, rhs: P) -> Self::Output {
-                $crate::query::OrQuery::new(Clone::clone(self), rhs)
+                $crate::query::OrQuery::new(self, rhs)
             }
         }
 
-
         impl std::ops::Not for $ty {
             type Output = $crate::query::NotQuery<$ty>;
+
+            fn not(self) -> Self::Output {
+                $crate::query::NotQuery::new(self)
+            }
+        }
+
+        impl<'a> std::ops::Not for &'a $ty {
+            type Output = $crate::query::NotQuery<&'a $ty>;
 
             fn not(self) -> Self::Output {
                 $crate::query::NotQuery::new(self)
@@ -148,7 +200,7 @@ pub use impl_bool_algebra;
 mod test_predicate {
     use super::Query;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     pub struct Foo;
     impl<T> Query<T> for Foo {
         fn test(&self, _item: &T) -> bool {
@@ -163,13 +215,13 @@ mod test_predicate {
         let b = Foo;
         let val = 123u8;
 
-        let x = a & b;
+        let x = &a & &b;
         assert!(!x.test(&val));
 
-        let y = a | b;
+        let y = &a | &b;
         assert!(!y.test(&val));
 
-        let z = !a;
+        let z = !&a;
         assert!(z.test(&val));
     }
 }

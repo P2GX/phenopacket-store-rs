@@ -1,9 +1,25 @@
 pub trait Query<T>
 where
     T: ?Sized,
-    Self: Sized,
 {
     fn test(&self, item: &T) -> bool;
+
+    fn and<O>(self, other: O) -> AndQuery<Self, O>
+    where
+        Self: Sized,
+    {
+        AndQuery(self, other)
+    }
+}
+
+impl<T, V> Query<V> for &T
+where
+    T: Query<V>,
+    V: ?Sized,
+{
+    fn test(&self, item: &V) -> bool {
+        (*self).test(item)
+    }
 }
 
 pub struct AndQuery<P, R>(pub P, pub R);
@@ -107,6 +123,15 @@ macro_rules! impl_bool_algebra {
                 $crate::query::OrQuery::new(self, rhs)
             }
         }
+
+        impl<P> std::ops::BitOr<P> for &$ty where $ty: Clone {
+            type Output = $crate::query::OrQuery<$ty, P>;
+
+            fn bitor(self, rhs: P) -> Self::Output {
+                $crate::query::OrQuery::new(Clone::clone(self), rhs)
+            }
+        }
+
 
         impl std::ops::Not for $ty {
             type Output = $crate::query::NotQuery<$ty>;

@@ -29,7 +29,7 @@ fn test_boolean_queries() {
     assert!(!lowercase_and_startswith_abc.test("abcDEF"));
     assert!(!lowercase_and_startswith_abc.test("ABC"));
 
-    let lowercase_or_startswith_abc = is_lowercase | starts_with_abc.clone();
+    let lowercase_or_startswith_abc = is_lowercase | &starts_with_abc;
     assert!(lowercase_or_startswith_abc.test("abcdef"));
     assert!(lowercase_or_startswith_abc.test("abcDEF"));
     assert!(!lowercase_or_startswith_abc.test("ABC"));

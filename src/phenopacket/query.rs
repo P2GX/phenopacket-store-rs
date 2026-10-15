@@ -166,8 +166,10 @@ mod test_queries {
     use super::{DiagnosedWith, HasVariantInGene};
     use crate::{
         phenopacket::{
-            fs::testutils, query::{Age, AnnotatedWithHPO, HasHpoLackingContext, HasVitalStatus, IsSex},
-        }, query::Query,
+            fs::testutils,
+            query::{Age, AnnotatedWithHPO, HasHpoLackingContext, HasVitalStatus, IsSex},
+        },
+        query::Query,
     };
 
     #[test]
@@ -235,15 +237,36 @@ mod test_queries {
     fn test_hpo_lacking_context() {
         let pp = testutils::example_phenopacket();
         let query = HasHpoLackingContext;
-        assert!(query.test(&pp), "the example phenopackt has a phenotypicFeature without severity, modifiers, onset or resolution -> this is lacking context.");
+        assert!(
+            query.test(&pp),
+            "the example phenopackt has a phenotypicFeature without severity, modifiers, onset or resolution -> this is lacking context."
+        );
     }
 
     #[test]
     fn test_annotated_with_hpo() {
         let pp = testutils::example_phenopacket();
-        
-        assert!(AnnotatedWithHPO{hpo_term: String::from("HP:0001270"), excluded: false}.test(&pp));
-        assert!(!AnnotatedWithHPO{hpo_term: String::from("HP:0001270"), excluded: true}.test(&pp));
-        assert!(!AnnotatedWithHPO{hpo_term: String::from("HP:FOOOOOO"), excluded: false}.test(&pp));
+
+        assert!(
+            AnnotatedWithHPO {
+                hpo_term: String::from("HP:0001270"),
+                excluded: false
+            }
+            .test(&pp)
+        );
+        assert!(
+            !AnnotatedWithHPO {
+                hpo_term: String::from("HP:0001270"),
+                excluded: true
+            }
+            .test(&pp)
+        );
+        assert!(
+            !AnnotatedWithHPO {
+                hpo_term: String::from("HP:FOOOOOO"),
+                excluded: false
+            }
+            .test(&pp)
+        );
     }
 }

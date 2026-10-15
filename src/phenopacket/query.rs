@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::time::Duration;
 
 use phenopackets::{
@@ -64,7 +65,7 @@ impl Query<Phenopacket> for HasVariantInGene {
 ///
 /// a query, testing if a phenopacket's subject is older than 40 could look like this: `Age(sdt::cmp::Ordering::Greater, 40).test(&my_phenopacket)`
 #[derive(Clone)]
-pub struct Age(std::cmp::Ordering, u64);
+pub struct Age(pub Ordering, pub u64);
 impl_bool_algebra!(Age);
 impl Query<Phenopacket> for Age {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -86,16 +87,16 @@ impl Query<Phenopacket> for Age {
             .unwrap_or_default();
 
         match self.0 {
-            std::cmp::Ordering::Less => age < self.1,
-            std::cmp::Ordering::Equal => age == self.1,
-            std::cmp::Ordering::Greater => age > self.1,
+            Ordering::Less => age < self.1,
+            Ordering::Equal => age == self.1,
+            Ordering::Greater => age > self.1,
         }
     }
 }
 
 /// does the subject have the specified vital [`Status`]?
 #[derive(Clone)]
-pub struct HasVitalStatus(Status);
+pub struct HasVitalStatus(pub Status);
 impl_bool_algebra!(HasVitalStatus);
 impl Query<Phenopacket> for HasVitalStatus {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -110,7 +111,7 @@ impl Query<Phenopacket> for HasVitalStatus {
 
 /// does the phenopacket have the specified [`Sex`]?
 #[derive(Clone)]
-pub struct IsSex(Sex);
+pub struct IsSex(pub Sex);
 impl_bool_algebra!(IsSex);
 impl Query<Phenopacket> for IsSex {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -141,8 +142,8 @@ impl Query<Phenopacket> for HasHpoLackingContext {
 /// is the phenopacket annotated with the specified `hpo_term` (included or excluded)?
 #[derive(Clone)]
 pub struct AnnotatedWithHPO {
-    hpo_term: String,
-    excluded: bool,
+    pub hpo_term: String,
+    pub excluded: bool,
 }
 impl_bool_algebra!(AnnotatedWithHPO);
 impl Query<Phenopacket> for AnnotatedWithHPO {

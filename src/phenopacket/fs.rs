@@ -145,19 +145,6 @@ where
             .filter_map(Result::ok)
             .filter_map(|entry| FilePhenoStore::get_phenopacket_id(entry.path())))
     }
-
-    fn query(
-        &self,
-        query: &impl crate::query::Query<Phenopacket>,
-    ) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
-        Ok(self.iter_phenopackets()?.filter(|id| {
-            if let Ok(Some(pp)) = self.get(id) {
-                query.test(&pp)
-            } else {
-                false
-            }
-        }))
-    }
 }
 
 /// read a phenopacket from the specified path
@@ -332,8 +319,6 @@ mod test_core {
 #[cfg(test)]
 mod test_file_pheno_store {
     use phenopackets::schema::v2::core::Sex;
-
-    use crate::query::Query;
 
     use super::{testutils::example_phenopacket, *};
     use std::{assert_matches, fs};

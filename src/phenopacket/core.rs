@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use phenopackets::schema::v2::Phenopacket;
 
+use crate::query::Query;
+
 /// PhenoStore implements a storage backend for phenopackets.
 ///
 /// Phenopackets can be stored with [`PhenoStore::add`] method and a UUID is provided upon successful storage
@@ -52,6 +54,24 @@ pub trait PhenoStore {
     ///  - fails if no iterator could be created
     ///  - errors arising from a single phenopacket fail *silently* i.e. erronous entries are ignored.
     fn iter_phenopackets(&self) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError>;
+
+    /// Query the stored phenopackets.
+    ///
+    /// Returns the [`Uuid`]s of phenopackets, where the `query` ([`Query::test`]) evaulated to `true`
+    ///
+    /// The provided implementation fetches and checks *all* stored phenopackets. Storage backends that can filter natively should override this (for example an RDBMS).
+    fn query(
+        &self,
+        query: &impl Query<Phenopacket>,
+    ) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
+        Ok(self.iter_phenopackets()?.filter(|id| {
+            if let Ok(Some(pp)) = self.get(id) {
+                query.test(&pp)
+            } else {
+                false
+            }
+        }))
+    }
 }
 
 impl<T> PhenoStore for &T
@@ -76,6 +96,13 @@ where
 
     fn iter_phenopackets(&self) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
         (*self).iter_phenopackets()
+    }
+
+    fn query(
+        &self,
+        query: &impl Query<Phenopacket>,
+    ) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
+        (*self).query(query)
     }
 }
 

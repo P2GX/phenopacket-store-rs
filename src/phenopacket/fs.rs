@@ -145,6 +145,19 @@ where
             .filter_map(Result::ok)
             .filter_map(|entry| FilePhenoStore::get_phenopacket_id(entry.path())))
     }
+
+    fn query(
+        &self,
+        query: &impl crate::query::Query<Phenopacket>,
+    ) -> Result<impl Iterator<Item = Uuid>, PhenoStoreError> {
+        Ok(self.iter_phenopackets()?.filter(|id| {
+            if let Ok(Some(pp)) = self.get(id) {
+                query.test(&pp)
+            } else {
+                false
+            }
+        }))
+    }
 }
 
 /// read a phenopacket from the specified path
@@ -318,6 +331,10 @@ mod test_core {
 // FilePhenoStore
 #[cfg(test)]
 mod test_file_pheno_store {
+    use phenopackets::schema::v2::core::Sex;
+
+    use crate::query::Query;
+
     use super::{testutils::example_phenopacket, *};
     use std::{assert_matches, fs};
 
@@ -454,5 +471,27 @@ mod test_file_pheno_store {
             uuid, test_inverse,
             "id->path and path->id should be inverse."
         )
+    }
+
+    #[test]
+    fn test_query() {
+        let fps = testutils::example_store_empty();
+        let pp = testutils::example_phenopacket();
+        let _ = fps.add(&pp);
+
+        let is_male = query::IsSex(Sex::Male);
+        let query_res = fps.query(&is_male);
+        assert!(
+            query_res.expect("query should not run into error.").count() == 1,
+            "should find the example phenopacket in query results."
+        );
+
+        assert!(
+            fps.query(&query::IsSex(Sex::Female))
+                .expect("query should not run into error.")
+                .count()
+                == 0,
+            "should not find the example phenopacket in query results."
+        );
     }
 }

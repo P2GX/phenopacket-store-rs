@@ -3,13 +3,6 @@ where
     T: ?Sized,
 {
     fn test(&self, item: &T) -> bool;
-
-    fn and<O>(self, other: O) -> AndQuery<Self, O>
-    where
-        Self: Sized,
-    {
-        AndQuery(self, other)
-    }
 }
 
 impl<T, V> Query<V> for &T
@@ -33,7 +26,7 @@ where
 }
 
 /* Boolean algebra */
-
+#[derive(Clone, Debug)]
 pub struct AndQuery<P, R>(pub P, pub R);
 
 impl<P, R> AndQuery<P, R> {
@@ -53,6 +46,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct OrQuery<P, R>(P, R);
 
 impl<P, R> OrQuery<P, R> {
@@ -72,6 +66,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct NotQuery<P>(P);
 
 impl<P> NotQuery<P> {
@@ -213,9 +208,11 @@ mod test_predicate {
     fn test_bool_algebra() {
         let a = Foo;
         let b = Foo;
+        let c = Foo;
         let val = 123u8;
 
-        let x = &a & &b;
+        let x = &a & (&b & c);
+        let y: Box<dyn Query<Foo>> = Box::new(Clone::clone(&x));
         assert!(!x.test(&val));
 
         let y = &a | &b;
@@ -223,5 +220,10 @@ mod test_predicate {
 
         let z = !&a;
         assert!(z.test(&val));
+    }
+
+    #[test]
+    fn test_query_is_dyn_compatible() {
+        fn bla<T>(_v: &dyn Query<T>) {}
     }
 }

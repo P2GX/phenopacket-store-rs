@@ -122,12 +122,11 @@ impl Query<Phenopacket> for IsSex {
     }
 }
 
-//TODO should we check for evidence aswell?
 /// is phenotype annotated with an HPO term without severity, modifiers, onset or resolution?
 #[derive(Clone)]
-pub struct HasHpoLackingContext;
-impl_bool_algebra!(HasHpoLackingContext);
-impl Query<Phenopacket> for HasHpoLackingContext {
+pub struct NoSeverityModifierOnsetResolution;
+impl_bool_algebra!(NoSeverityModifierOnsetResolution);
+impl Query<Phenopacket> for NoSeverityModifierOnsetResolution {
     fn test(&self, item: &Phenopacket) -> bool {
         item.phenotypic_features.iter().any(|pf| {
             pf.severity.is_none()
@@ -139,6 +138,7 @@ impl Query<Phenopacket> for HasHpoLackingContext {
     }
 }
 
+//TODO recurse down with ontolius dependency
 /// is the phenopacket annotated with the specified `hpo_term` (included or excluded)?
 #[derive(Clone)]
 pub struct AnnotatedWithHPO {
@@ -167,7 +167,7 @@ mod test_queries {
     use crate::{
         phenopacket::{
             fs::testutils,
-            query::{Age, AnnotatedWithHPO, HasHpoLackingContext, HasVitalStatus, IsSex},
+            query::{Age, AnnotatedWithHPO, NoSeverityModifierOnsetResolution, HasVitalStatus, IsSex},
         },
         query::Query,
     };
@@ -234,12 +234,12 @@ mod test_queries {
 
     //TODO is this test meaningful? does it give us anything more that the type checker does not already cover? It does not test the bounds of legal results, but rather one "yep works"
     #[test]
-    fn test_hpo_lacking_context() {
+    fn test_hpo_no_severity_modifier_onset_or_resolution() {
         let pp = testutils::example_phenopacket();
-        let query = HasHpoLackingContext;
+        let query = NoSeverityModifierOnsetResolution;
         assert!(
             query.test(&pp),
-            "the example phenopackt has a phenotypicFeature without severity, modifiers, onset or resolution -> this is lacking context."
+            "the example phenopackt has a phenotypicFeature without severity, modifiers, onset or resolution."
         );
     }
 

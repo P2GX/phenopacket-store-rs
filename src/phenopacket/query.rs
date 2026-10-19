@@ -9,6 +9,11 @@ use phenopackets::{
     },
 };
 
+#[cfg(feature = "ontology-query")]
+use ontolius::TermId;
+#[cfg(feature = "ontology-query")]
+use ontolius::ontology::TaxonomyQuery;
+
 use crate::{impl_bool_algebra, query::Query};
 
 #[derive(Clone)]
@@ -139,18 +144,33 @@ impl Query<Phenopacket> for NoSeverityModifierOnsetResolution {
 }
 
 //TODO recurse down with ontolius dependency
+// check if t.id is child of self.hpo_term
 /// is the phenopacket annotated with the specified `hpo_term` (included or excluded)?
+#[cfg(feature = "ontology-query")]
 #[derive(Clone)]
-pub struct AnnotatedWithHPO {
-    pub hpo_term: String,
+pub struct HasPhenotypicFeature<T> {
+    pub term_id: ontolius::TermId,
     pub excluded: bool,
+    pub taxonomy: T,
 }
-impl_bool_algebra!(AnnotatedWithHPO);
-impl Query<Phenopacket> for AnnotatedWithHPO {
+
+#[cfg(feature = "ontology-query")]
+impl_bool_algebra!(HasPhenotypicFeature<T>);
+
+#[cfg(feature = "ontology-query")]
+impl<T> Query<Phenopacket> for HasPhenotypicFeature<T>
+where
+    T: TaxonomyQuery,
+{
     fn test(&self, item: &Phenopacket) -> bool {
         item.phenotypic_features.iter().any(|pf| {
-            pf.r#type.as_ref().is_some_and(|t| t.id == self.hpo_term)
-                && pf.excluded == self.excluded
+            pf.excluded == self.excluded
+                && pf.r#type.as_ref().is_some_and(|t| {
+                    let item_term_id: TermId = t.id.parse().unwrap(); //TODO get rid of unwrap
+
+                    item_term_id == self.term_id
+                        || self.taxonomy.is_descendant_of(&item_term_id, &self.term_id)
+                })
         })
     }
 }
@@ -160,17 +180,17 @@ impl Query<Phenopacket> for AnnotatedWithHPO {
 //
 #[cfg(test)]
 mod test_queries {
-    use phenopackets::schema::v2::core::{Sex, vital_status::Status};
-    use std::cmp::Ordering;
-
     use super::{DiagnosedWith, HasVariantInGene};
     use crate::{
         phenopacket::{
             fs::testutils,
-            query::{Age, AnnotatedWithHPO, NoSeverityModifierOnsetResolution, HasVitalStatus, IsSex},
+            query::{Age, HasVitalStatus, IsSex, NoSeverityModifierOnsetResolution},
         },
         query::Query,
     };
+    use ontolius::TermId;
+    use phenopackets::schema::v2::core::{Sex, vital_status::Status};
+    use std::cmp::Ordering;
 
     #[test]
     fn test_diagnosed_with() {
@@ -243,30 +263,98 @@ mod test_queries {
         );
     }
 
+    #[cfg(feature = "ontology-query")]
     #[test]
     fn test_annotated_with_hpo() {
+        use crate::phenopacket::query::HasPhenotypicFeature;
+        use ontolius::ontology::csr::MinimalCsrOntology;
+
         let pp = testutils::example_phenopacket();
+        let hpo: MinimalCsrOntology = {
+            use ontolius::io::OntologyLoaderBuilder;
+            use std::{fs::File, io::BufReader, path::Path};
+
+            let path = Path::new("data").join("hp.json");
+            let loader = OntologyLoaderBuilder::new().obographs_parser().build();
+            let reader =
+                BufReader::new(File::open(path).expect("setup: failed to open ontology file."));
+
+            loader
+                .load_from_buf_read(reader)
+                .expect("failed to load from reader.")
+        };
 
         assert!(
-            AnnotatedWithHPO {
-                hpo_term: String::from("HP:0001270"),
-                excluded: false
+            HasPhenotypicFeature {
+                term_id: "HP:0001270".parse().unwrap(),
+                excluded: false,
+                taxonomy: &hpo,
             }
             .test(&pp)
         );
         assert!(
-            !AnnotatedWithHPO {
-                hpo_term: String::from("HP:0001270"),
-                excluded: true
+            !HasPhenotypicFeature {
+                term_id: "HP:0001270".parse().unwrap(),
+                excluded: true,
+                taxonomy: &hpo,
             }
             .test(&pp)
         );
         assert!(
-            !AnnotatedWithHPO {
-                hpo_term: String::from("HP:FOOOOOO"),
-                excluded: false
+            !HasPhenotypicFeature {
+                term_id: "HP:FOOOOOO".parse().unwrap(),
+                excluded: false,
+                taxonomy: &hpo,
             }
             .test(&pp)
+        );
+
+        // test mechanics with ancestor / decendent terms
+        // t1 -> p -> t2
+        // p is a term contained in the example phenopacket
+        let p: TermId = "HP:0031910".parse().unwrap();
+        // t1 is parent of p
+        let t1: TermId = "HP:0012638".parse().unwrap();
+        // t2 is child of p
+        let t2: TermId = "HP:0006824".parse().unwrap();
+
+        assert!(
+            HasPhenotypicFeature {
+                term_id: p.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            }
+            .test(&pp),
+            "the patient has p -> term should match."
+        );
+        assert!(
+            HasPhenotypicFeature {
+                term_id: t1.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            }
+            .test(&pp),
+            "t1 is parent of p -> if patient has p, also has t1."
+        );
+        assert!(
+            !HasPhenotypicFeature {
+                term_id: t2.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            }
+            .test(&pp),
+            "t2 is child of p -> patient does not have t2."
+        );
+
+        // test exclusion
+        assert!(
+            !HasPhenotypicFeature {
+                term_id: p.clone(),
+                excluded: false,
+                taxonomy: &hpo,
+            }
+            .test(&pp),
+            "p is excluded in example phenopacket."
         );
     }
 }

@@ -3,8 +3,6 @@ use uuid::Uuid;
 
 use phenopackets::schema::v2::Phenopacket;
 
-use crate::query::Query;
-
 /// PhenoStore implements a storage backend for phenopackets.
 ///
 /// Phenopackets can be stored with [`PhenoStore::add`] method and a UUID is provided upon successful storage

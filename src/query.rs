@@ -223,6 +223,7 @@ mod test_predicate {
     }
 
     #[test]
+    #[allow(dead_code)]
     fn test_query_is_dyn_compatible() {
         fn bla<T>(_v: &dyn Query<T>) {}
     }

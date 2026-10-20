@@ -86,3 +86,9 @@ impl Cohort {
         }
     }
 }
+
+impl Default for Cohort {
+    fn default() -> Self {
+        Self::new()
+    }
+}

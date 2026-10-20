@@ -21,6 +21,7 @@ use crate::{impl_bool_algebra, query::Query};
 ///
 /// # Fields
 /// - (`String`) - The disease id.
+// TODO: add an example disease id
 pub struct DiagnosedWith(pub String);
 impl_bool_algebra!(DiagnosedWith);
 impl Query<Phenopacket> for DiagnosedWith {
@@ -33,10 +34,12 @@ impl Query<Phenopacket> for DiagnosedWith {
 
 #[derive(Clone)]
 //ASK double check phrasing
-/// check whether a gene contains variants or is somewhat significant.
+/// Test if the phenopacket has a genomic interpretation with either gene context corresponding to the query
+/// or a variant interpretation with the gene context corresponding to the query.
 ///
 /// # Fields
-/// - (`String`) - the gene id.
+/// - (`String`) - the query gene id (e.g. `"HGNC:3603"` for *FBN1*).
+// TODO: add an example HGNC gene id
 pub struct HasVariantInGene(pub String);
 impl HasVariantInGene {
     fn matches_gene_descr(&self, gd: &GeneDescriptor) -> bool {
@@ -69,8 +72,17 @@ impl Query<Phenopacket> for HasVariantInGene {
 /// - (u64) - the age to compare the phenopacket to
 ///
 /// a query, testing if a phenopacket's subject is older than 40 could look like this: `Age(sdt::cmp::Ordering::Greater, 40).test(&my_phenopacket)`
+// TODO: // The query should operate on the `time_at_last_encounter` (the Age variant only), not on the `date_of_birth`.
+//
+// Moreover, we must provide more convenience here, to simplify creating the age query
+// from different input formats (years, months, years, months, days).
+// We should provide at least one "static constructor" that takes the number of years, months, and days as mandatory unsigned values of a reasonable type.
+//
+// Last, we should add examples for the constructor. No need to actually call the `test` method.
+//
+// BTW, how do we select phenopackets with individuals less than or equal to, say, 40 years of age?
 #[derive(Clone)]
-pub struct Age(pub Ordering, pub u64);
+pub struct Age(pub Ordering, pub u64); // make the fields private here
 impl_bool_algebra!(Age);
 impl Query<Phenopacket> for Age {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -100,8 +112,9 @@ impl Query<Phenopacket> for Age {
 }
 
 /// does the subject have the specified vital [`Status`]?
+// TODO: provide convenience constructors for "is_alive", "is_deceased", "is_unknown".
 #[derive(Clone)]
-pub struct HasVitalStatus(pub Status);
+pub struct HasVitalStatus(pub Status); // make this private.
 impl_bool_algebra!(HasVitalStatus);
 impl Query<Phenopacket> for HasVitalStatus {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -127,25 +140,12 @@ impl Query<Phenopacket> for IsSex {
     }
 }
 
-/// is phenotype annotated with an HPO term without severity, modifiers, onset or resolution?
-#[derive(Clone)]
-pub struct NoSeverityModifierOnsetResolution;
-impl_bool_algebra!(NoSeverityModifierOnsetResolution);
-impl Query<Phenopacket> for NoSeverityModifierOnsetResolution {
-    fn test(&self, item: &Phenopacket) -> bool {
-        item.phenotypic_features.iter().any(|pf| {
-            pf.severity.is_none()
-                && pf.modifiers.is_empty()
-                && pf.onset.is_none()
-                && pf.onset.is_none()
-                && pf.resolution.is_none()
-        })
-    }
-}
-
 //TODO recurse down with ontolius dependency
 // check if t.id is child of self.hpo_term
 /// is the phenopacket annotated with the specified `hpo_term` (included or excluded)?
+// TODO: this is actually incorrect at the moment.
+//  A present feature (`excluded=false`) implies presence of all its ancestors
+//  but an excluded feature (`excluded=true`) implies exclusion of all its *descendants*.
 #[cfg(feature = "ontology-query")]
 #[derive(Clone)]
 pub struct HasPhenotypicFeature<T> {
@@ -166,7 +166,7 @@ where
         item.phenotypic_features.iter().any(|pf| {
             pf.excluded == self.excluded
                 && pf.r#type.as_ref().is_some_and(|t| {
-                    let item_term_id: TermId = t.id.parse().unwrap(); //TODO get rid of unwrap
+                    let item_term_id: TermId = t.id.parse().unwrap(); //TODO get rid of unwrap and document the behavior.
 
                     item_term_id == self.term_id
                         || self.taxonomy.is_descendant_of(&item_term_id, &self.term_id)
@@ -184,7 +184,7 @@ mod test_queries {
     use crate::{
         phenopacket::{
             fs::testutils,
-            query::{Age, HasVitalStatus, IsSex, NoSeverityModifierOnsetResolution},
+            query::{Age, HasVitalStatus, IsSex},
         },
         query::Query,
     };
@@ -194,6 +194,8 @@ mod test_queries {
 
     #[test]
     fn test_diagnosed_with() {
+        // TODO: create a `cfg(test)` (see an example at https://github.com/ielis/ontolius/blob/fe10ac2e3a22e6e3c5482a19c91825ba8045b0dc/src/lib.rs#L11)
+        // or create module-scoped test util modules instead of using the `testutil` module belonging to another functionality.
         let pp = testutils::example_phenopacket();
         let has_pfeiffer_syndrom = DiagnosedWith(String::from("OMIM:101600"));
         let has_foo = DiagnosedWith(String::from("OMIM:FOOOOOO"));
@@ -252,17 +254,6 @@ mod test_queries {
         );
     }
 
-    //TODO is this test meaningful? does it give us anything more that the type checker does not already cover? It does not test the bounds of legal results, but rather one "yep works"
-    #[test]
-    fn test_hpo_no_severity_modifier_onset_or_resolution() {
-        let pp = testutils::example_phenopacket();
-        let query = NoSeverityModifierOnsetResolution;
-        assert!(
-            query.test(&pp),
-            "the example phenopackt has a phenotypicFeature without severity, modifiers, onset or resolution."
-        );
-    }
-
     #[cfg(feature = "ontology-query")]
     #[test]
     fn test_annotated_with_hpo() {
@@ -310,51 +301,47 @@ mod test_queries {
         );
 
         // test mechanics with ancestor / decendent terms
-        // t1 -> p -> t2
-        // p is a term contained in the example phenopacket
-        let p: TermId = "HP:0031910".parse().unwrap();
+        // t1 -> q -> t2
+        // q_excl is an excluded term contained in the example phenopacket
+        let q_excl: TermId = "HP:0031910".parse().unwrap(); // Abn. cranial nerve physiology
         // t1 is parent of p
-        let t1: TermId = "HP:0012638".parse().unwrap();
+        let q_par: TermId = "HP:0012638".parse().unwrap(); // Abn. nervous system physiology
         // t2 is child of p
-        let t2: TermId = "HP:0006824".parse().unwrap();
+        let q_child: TermId = "HP:0006824".parse().unwrap(); // Cranial nerve paralysis
 
+        let query = HasPhenotypicFeature {
+            term_id: q_excl.clone(),
+            excluded: true,
+            taxonomy: &hpo,
+        };
+        assert!(query.test(&pp));
+
+        let query = HasPhenotypicFeature {
+            term_id: q_par.clone(),
+            excluded: true,
+            taxonomy: &hpo,
+        };
         assert!(
-            HasPhenotypicFeature {
-                term_id: p.clone(),
-                excluded: true,
-                taxonomy: &hpo,
-            }
-            .test(&pp),
-            "the patient has p -> term should match."
-        );
-        assert!(
-            HasPhenotypicFeature {
-                term_id: t1.clone(),
-                excluded: true,
-                taxonomy: &hpo,
-            }
-            .test(&pp),
-            "t1 is parent of p -> if patient has p, also has t1."
-        );
-        assert!(
-            !HasPhenotypicFeature {
-                term_id: t2.clone(),
-                excluded: true,
-                taxonomy: &hpo,
-            }
-            .test(&pp),
-            "t2 is child of p -> patient does not have t2."
+            !query.test(&pp),
+            "exclusion of a term does NOT exclude any of its ancestors."
         );
 
-        // test exclusion
+        let query = HasPhenotypicFeature {
+            term_id: q_child.clone(),
+            excluded: true,
+            taxonomy: &hpo,
+        };
         assert!(
-            !HasPhenotypicFeature {
-                term_id: p.clone(),
-                excluded: false,
-                taxonomy: &hpo,
-            }
-            .test(&pp),
-            "p is excluded in example phenopacket."
+            !query.test(&pp),
+            "exclusion of a term also excludes its descendants"
         );
+
+        // test the exclusion
+        let query = HasPhenotypicFeature {
+            term_id: q_excl.clone(),
+            excluded: false,
+            taxonomy: &hpo,
+        };
+        assert!(!query.test(&pp), "excluded term is not present");
     }
 }

@@ -1,3 +1,31 @@
+/// A query for testing if a value with type `T` meets a condition.
+///
+/// The users are encouraged to implement basic queries for simple tests,
+/// and to combine basic queries into complex tests using the boolean algebra operators, including `&` (and), `|` (or), and `!` (not).
+///
+/// # Examples
+///
+/// We can implement a query to test if a `&str` consists of lower-case characters.
+///
+/// ```
+/// use ppktstore::{impl_bool_algebra, query::Query};
+///
+/// #[derive(Debug, Clone)]
+/// struct IsLowercase;
+///
+/// impl Query<str> for IsLowercase {  // ❶
+///     fn test(&self, item: &str) -> bool {
+///         item.chars().all(|c| c.is_lowercase())  // ➋
+///     }
+/// }
+/// impl_bool_algebra!(IsLowercase); // ➌
+/// ```
+///
+/// The `Query` trait must be implemented (❶) such that `true` is returned if the `item` matches the condition,
+/// and `false` otherwise (➋).
+///
+/// The [`impl_bool_algebra`] macro enables (➌) building complex queries from simple building blocks
+/// using the boolean algebra operators.
 pub trait Query<T>
 where
     T: ?Sized,
@@ -85,6 +113,7 @@ where
     }
 }
 
+/// A macro for implementing the boolean algebra operators for an arbitrary [`Query`].
 #[macro_export]
 macro_rules! impl_bool_algebra {
     // Match the generic queries
@@ -212,7 +241,6 @@ mod test_predicate {
         let val = 123u8;
 
         let x = &a & (&b & c);
-        let y: Box<dyn Query<Foo>> = Box::new(Clone::clone(&x));
         assert!(!x.test(&val));
 
         let y = &a | &b;

@@ -2,3 +2,4 @@
 pub mod cohort;
 /// Phenopacket persistence backends.
 pub mod phenopacket;
+pub mod query;

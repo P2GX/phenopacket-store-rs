@@ -112,7 +112,6 @@ impl Query<Phenopacket> for Age {
 }
 
 /// does the subject have the specified vital [`Status`]?
-// TODO: provide convenience constructors for "is_alive", "is_deceased", "is_unknown".
 #[derive(Clone)]
 pub struct HasVitalStatus(pub Status); // make this private.
 impl_bool_algebra!(HasVitalStatus);
@@ -124,6 +123,36 @@ impl Query<Phenopacket> for HasVitalStatus {
                 Some(vs) => vs.status() == self.0,
                 None => Status::UnknownStatus == self.0,
             })
+    }
+}
+
+/// is the subject alive?
+#[derive(Debug, Clone)]
+pub struct IsAlive;
+impl_bool_algebra!(IsAlive);
+impl Query<Phenopacket> for IsAlive {
+    fn test(&self, item: &Phenopacket) -> bool {
+        HasVitalStatus(Status::Alive).test(item)
+    }
+}
+
+/// is the subject deceased?
+#[derive(Debug, Clone)]
+pub struct IsDeceased;
+impl_bool_algebra!(IsDeceased);
+impl Query<Phenopacket> for IsDeceased {
+    fn test(&self, item: &Phenopacket) -> bool {
+        HasVitalStatus(Status::Deceased).test(item)
+    }
+}
+
+/// is the subjects vital staus unknown?
+#[derive(Debug, Clone)]
+pub struct IsUnknownStatus;
+impl_bool_algebra!(IsUnknownStatus);
+impl Query<Phenopacket> for IsUnknownStatus {
+    fn test(&self, item: &Phenopacket) -> bool {
+        HasVitalStatus(Status::UnknownStatus).test(item)
     }
 }
 
@@ -182,10 +211,8 @@ where
 mod test_queries {
     use super::{DiagnosedWith, HasVariantInGene};
     use crate::{
-        phenopacket::fs::testutils,
-        query::{
-            Query,
-            phenopacket::{Age, HasVitalStatus, IsSex},
+        phenopacket::fs::testutils, query::{
+            Query, phenopacket::{Age, HasVitalStatus, IsAlive, IsDeceased, IsSex, IsUnknownStatus},
         },
     };
     use ontolius::TermId;
@@ -238,6 +265,11 @@ mod test_queries {
             unknown_vital_status.test(&pp),
             "The test phenopacket has no vital status annotated."
         );
+
+        // test convenience wrappers
+        assert!(IsUnknownStatus.test(&pp));
+        assert!(!IsAlive.test(&pp));
+        assert!(!IsDeceased.test(&pp));
     }
 
     #[test]

@@ -16,7 +16,7 @@ use ontolius::ontology::TaxonomyQuery;
 
 use crate::{impl_bool_algebra, query::Query};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// check whether a patient is diagnosed with a certain disease.
 ///
 /// # Fields
@@ -32,7 +32,7 @@ impl Query<Phenopacket> for DiagnosedWith {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 //ASK double check phrasing
 /// Test if the phenopacket has a genomic interpretation with either gene context corresponding to the query
 /// or a variant interpretation with the gene context corresponding to the query.
@@ -81,7 +81,7 @@ impl Query<Phenopacket> for HasVariantInGene {
 // Last, we should add examples for the constructor. No need to actually call the `test` method.
 //
 // BTW, how do we select phenopackets with individuals less than or equal to, say, 40 years of age?
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Age(pub Ordering, pub u64); // make the fields private here
 impl_bool_algebra!(Age);
 impl Query<Phenopacket> for Age {
@@ -112,7 +112,7 @@ impl Query<Phenopacket> for Age {
 }
 
 /// does the subject have the specified vital [`Status`]?
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HasVitalStatus(pub Status); // make this private.
 impl_bool_algebra!(HasVitalStatus);
 impl Query<Phenopacket> for HasVitalStatus {
@@ -157,7 +157,7 @@ impl Query<Phenopacket> for IsUnknownStatus {
 }
 
 /// does the phenopacket have the specified [`Sex`]?
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IsSex(pub Sex);
 impl_bool_algebra!(IsSex);
 impl Query<Phenopacket> for IsSex {
@@ -176,7 +176,7 @@ impl Query<Phenopacket> for IsSex {
 //  A present feature (`excluded=false`) implies presence of all its ancestors
 //  but an excluded feature (`excluded=true`) implies exclusion of all its *descendants*.
 #[cfg(feature = "ontology-query")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HasPhenotypicFeature<T> {
     pub term_id: ontolius::TermId,
     pub excluded: bool,

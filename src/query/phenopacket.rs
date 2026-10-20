@@ -182,11 +182,11 @@ where
 mod test_queries {
     use super::{DiagnosedWith, HasVariantInGene};
     use crate::{
-        phenopacket::{
-            fs::testutils,
-            query::{Age, HasVitalStatus, IsSex},
+        phenopacket::fs::testutils,
+        query::{
+            Query,
+            phenopacket::{Age, HasVitalStatus, IsSex},
         },
-        query::Query,
     };
     use ontolius::TermId;
     use phenopackets::schema::v2::core::{Sex, vital_status::Status};
@@ -257,7 +257,7 @@ mod test_queries {
     #[cfg(feature = "ontology-query")]
     #[test]
     fn test_annotated_with_hpo() {
-        use crate::phenopacket::query::HasPhenotypicFeature;
+        use crate::query::phenopacket::HasPhenotypicFeature;
         use ontolius::ontology::csr::MinimalCsrOntology;
 
         let pp = testutils::example_phenopacket();

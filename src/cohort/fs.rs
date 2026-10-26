@@ -8,22 +8,22 @@ use std::{
 use uuid::Uuid;
 
 use super::codec::CohortCodec;
-use super::{Cohort, CohortManager, CohortManagerError};
+use super::{Cohort, CohortStore, CohortStoreError};
 
-/// A filesystem-based implementation of the [`CohortManager`].
+/// A filesystem-based implementation of the [`CohortStore`].
 #[derive(Debug)]
-pub struct FileCohortManager<P, C> {
+pub struct FileCohortStore<P, C> {
     cohorts_dir: P,
     codec: C,
 }
 
-impl<P, C> CohortManager for FileCohortManager<P, C>
+impl<P, C> CohortStore for FileCohortStore<P, C>
 where
     P: AsRef<Path>,
     C: CohortCodec,
-    C::Error: Into<CohortManagerError>,
+    C::Error: Into<CohortStoreError>,
 {
-    fn add(&self, cohort: &Cohort) -> Result<Uuid, CohortManagerError> {
+    fn add(&self, cohort: &Cohort) -> Result<Uuid, CohortStoreError> {
         let id = Uuid::new_v4();
         let path = self.get_cohort_path(&id);
         let mut writer = BufWriter::new(fs::File::create(&path)?);
@@ -37,7 +37,7 @@ where
         Ok(id)
     }
 
-    fn get(&self, id: &Uuid) -> Result<Option<Cohort>, CohortManagerError> {
+    fn get(&self, id: &Uuid) -> Result<Option<Cohort>, CohortStoreError> {
         let path = self.get_cohort_path(id);
         match File::open(path) {
             Ok(file) => {
@@ -45,17 +45,17 @@ where
                 let c = self
                     .codec
                     .read(&mut r)
-                    .map_err(|_| CohortManagerError::InvalidData)?;
+                    .map_err(|_| CohortStoreError::InvalidData)?;
                 Ok(Some(c))
             }
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(None),
-                _ => Err(CohortManagerError::Io(e)),
+                _ => Err(CohortStoreError::Io(e)),
             },
         }
     }
 
-    fn update(&self, id: &Uuid, cohort: &Cohort) -> Result<bool, CohortManagerError> {
+    fn update(&self, id: &Uuid, cohort: &Cohort) -> Result<bool, CohortStoreError> {
         let cohort_file = self.get_cohort_path(id);
         if !cohort_file.exists() {
             return Ok(false);
@@ -81,14 +81,14 @@ where
         }
     }
 
-    fn remove(&self, id: &Uuid) -> Result<bool, CohortManagerError> {
+    fn remove(&self, id: &Uuid) -> Result<bool, CohortStoreError> {
         let path = self.get_cohort_path(id);
         match fs::remove_file(&path) {
             Ok(_) => Ok(true),
             Err(e) => match e.kind() {
                 IoErrorKind::NotFound => Ok(false),
-                IoErrorKind::IsADirectory => Err(CohortManagerError::InvalidData), // fs might be corrupted by external instance
-                _ => Err(CohortManagerError::Io(e)),
+                IoErrorKind::IsADirectory => Err(CohortStoreError::InvalidData), // fs might be corrupted by external instance
+                _ => Err(CohortStoreError::Io(e)),
             },
         }
     }
@@ -99,7 +99,7 @@ where
     ///
     /// # Errors
     ///  - if the directory cannot be read for some reason
-    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (Uuid, Cohort)>, CohortManagerError> {
+    fn iter_cohorts(&self) -> Result<impl Iterator<Item = (Uuid, Cohort)>, CohortStoreError> {
         Ok(self
             .cohorts_dir
             .as_ref()
@@ -113,29 +113,29 @@ where
     }
 }
 
-impl<P, C> FileCohortManager<P, C>
+impl<P, C> FileCohortStore<P, C>
 where
     P: AsRef<Path>,
 {
-    /// Initiate a new file-based CohortManager.
+    /// Initiate a new file-based CohortStore.
     ///
-    /// Will either open the given `dir` as [`FileCohortManager`], or attempt to create a directory at `dir` if it does not exist.
+    /// Will either open the given `dir` as [`FileCohortStore`], or attempt to create a directory at `dir` if it does not exist.
     ///
     /// # Errors
     ///
     /// - the given path exists, but is not a directory
     /// - the path does not exist and could not be created
     ///
-    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortManagerError> {
+    pub fn new(cohorts_dir: P, codec: C) -> Result<Self, FileCohortStoreError> {
         if cohorts_dir.as_ref().exists() {
             if !cohorts_dir.as_ref().is_dir() {
                 // path exists but is not a dir
-                return Err(FileCohortManagerError::NotADirectory);
+                return Err(FileCohortStoreError::NotADirectory);
             }
         } else {
             fs::create_dir_all(&cohorts_dir)?;
         }
-        Ok(FileCohortManager { cohorts_dir, codec })
+        Ok(FileCohortStore { cohorts_dir, codec })
     }
 
     /// extracts the [`Uuid`] from a [`Cohort`] path.
@@ -148,7 +148,7 @@ where
     }
 }
 
-impl<P, C> FileCohortManager<P, C>
+impl<P, C> FileCohortStore<P, C>
 where
     P: AsRef<Path>,
     C: CohortCodec,
@@ -165,16 +165,16 @@ where
 //
 // ERRORS
 //
-/// Represents the errors that can happen during [`FileCohortManager`] configuration.
+/// Represents the errors that can happen during [`FileCohortStore`] configuration.
 #[derive(Debug)]
-pub enum FileCohortManagerError {
+pub enum FileCohortStoreError {
     /// The provided path did not point to a directory.
     NotADirectory,
     /// Another IO-related error.
     Io(std::io::Error),
 }
 
-impl From<std::io::Error> for FileCohortManagerError {
+impl From<std::io::Error> for FileCohortStoreError {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             IoErrorKind::NotADirectory => Self::NotADirectory,
@@ -183,26 +183,26 @@ impl From<std::io::Error> for FileCohortManagerError {
     }
 }
 
-impl std::fmt::Display for FileCohortManagerError {
+impl std::fmt::Display for FileCohortStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FileCohortManagerError::NotADirectory => write!(f, "Not a directory"),
-            FileCohortManagerError::Io(error) => error.fmt(f),
+            FileCohortStoreError::NotADirectory => write!(f, "Not a directory"),
+            FileCohortStoreError::Io(error) => error.fmt(f),
         }
     }
 }
 
-impl std::error::Error for FileCohortManagerError {}
+impl std::error::Error for FileCohortStoreError {}
 
 //
 // TESTS
 //
 #[cfg(test)]
-mod test_cohort_manager {
+mod test_cohort_store {
 
     use super::super::codec::JsonCohortCodec;
-    use super::super::{Cohort, CohortManager, CohortManagerError};
-    use super::FileCohortManager;
+    use super::super::{Cohort, CohortStore, CohortStoreError};
+    use super::FileCohortStore;
     use std::assert_matches;
     use std::fs::File;
     use std::io::{BufWriter, Write};
@@ -214,21 +214,21 @@ mod test_cohort_manager {
     fn test_new() {
         // TEST SUCCESS: existing, empty dir
         let tmpdir = tempfile::TempDir::new().expect("creation of tempdir should work.");
-        let _ = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+        let _ = FileCohortStore::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on existing temp dir and json codec to succeed.");
 
         // TEST SUCCESS: the dir does not exist but we are able to create it.
         let tmpdir_nonexist = tmpdir.path().join("non-existent-dir");
-        let _ = FileCohortManager::new(&tmpdir_nonexist, JsonCohortCodec)
+        let _ = FileCohortStore::new(&tmpdir_nonexist, JsonCohortCodec)
             .expect("we should be able to create a dir (in this tmpdir) if it does not exist.");
 
         // TEST FAIL: the path exists but is not a dir
         let file = tempfile::NamedTempFile::new().expect("should be able to create temp files");
-        let test_not_a_dir = FileCohortManager::new(file.path(), JsonCohortCodec);
+        let test_not_a_dir = FileCohortStore::new(file.path(), JsonCohortCodec);
         assert_matches!(
             test_not_a_dir,
             Err(_),
-            "trying to create a FileCohortManager on a file instead of a dir did not fail as expected."
+            "trying to create a FileCohortStore on a file instead of a dir did not fail as expected."
         );
     }
 
@@ -236,25 +236,24 @@ mod test_cohort_manager {
     fn test_cohort_path() {
         // setup
         let dir = Path::new("data");
-        let fcm = FileCohortManager::new(&dir, JsonCohortCodec)
+        let fcm = FileCohortStore::new(&dir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
 
         let id: Uuid = "67e55044-10b1-426f-9247-bb680e5fe0c8"
             .parse()
             .expect("valid UUID");
         let cohort_path = fcm.get_cohort_path(&id);
-
         assert_eq!(
-            cohort_path.to_str().expect("valid string"),
-            "data/67e55044-10b1-426f-9247-bb680e5fe0c8.json"
+            cohort_path,
+            Path::new("data/67e55044-10b1-426f-9247-bb680e5fe0c8.json")
         )
     }
 
     #[test]
-    fn test_add_get() -> Result<(), CohortManagerError> {
+    fn test_add_get() -> Result<(), CohortStoreError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
-        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+        let fcm = FileCohortStore::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
 
         //test add
@@ -290,10 +289,10 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_remove() -> Result<(), CohortManagerError> {
+    fn test_remove() -> Result<(), CohortStoreError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
-        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+        let fcm = FileCohortStore::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
         let c1 = fcm.add(&Cohort::new())?;
         let c2 = fcm.add(&Cohort::new())?;
@@ -311,7 +310,7 @@ mod test_cohort_manager {
         assert_matches!(
             fcm.get(&c2),
             Ok(None),
-            "removed cohort should not exist in CohortManager anymore"
+            "removed cohort should not exist in CohortStore anymore"
         );
 
         let t_remove_nonexisting = fcm.remove(&c2);
@@ -321,10 +320,10 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_update() -> Result<(), CohortManagerError> {
+    fn test_update() -> Result<(), CohortStoreError> {
         //setup
         let tmpdir = tempfile::TempDir::new()?;
-        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+        let fcm = FileCohortStore::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
 
         // test
@@ -352,10 +351,10 @@ mod test_cohort_manager {
     }
 
     #[test]
-    fn test_iter_cohorts() -> Result<(), CohortManagerError> {
+    fn test_iter_cohorts() -> Result<(), CohortStoreError> {
         // setup
         let tmpdir = tempfile::TempDir::new()?;
-        let fcm = FileCohortManager::new(&tmpdir, JsonCohortCodec)
+        let fcm = FileCohortStore::new(&tmpdir, JsonCohortCodec)
             .expect("initiation on temp dir and json codec to succeed.");
         let c1 = fcm.add(&Cohort::new())?;
         let c2 = fcm.add(&Cohort::new())?;

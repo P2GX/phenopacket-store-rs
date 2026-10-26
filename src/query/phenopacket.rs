@@ -38,24 +38,23 @@ impl Query<Phenopacket> for DiagnosedWith {
     }
 }
 
-#[derive(Debug, Clone)]
-//ASK double check phrasing
-/// Test if the phenopacket has a genomic interpretation with either gene context corresponding to the query
-/// or a variant interpretation with the gene context corresponding to the query.
+/// Test if the phenopacket has a genomic interpretation with variation descriptor annotated to the query gene.
+///
+/// Checks the [`gene_context`](https://phenopacket-schema.readthedocs.io/en/latest/variant.html#data-model) field of the [VariationDescriptor](https://phenopacket-schema.readthedocs.io/en/latest/variant.html#rstvariant).
 ///
 /// # Fields
 /// - (`String`) - the query gene id (e.g. `"HGNC:3603"` for *FBN1*).
 ///
 /// # Examples
 ///
-/// We can test whether our patient has a genomic interpretation concerning some gene.
+/// We can test whether our patient has a genomic interpretation concerning fibrillin 1.
 ///
 /// ```
 /// use ppktstore::query::phenopacket::HasVariantInGene;
 ///
-/// let FBN1_gene = String::from("NCBIGene:2200");
-/// let query_FBN1 = HasVariantInGene(FBN1_gene);
+/// let query = HasVariantInGene(String::from("HGNC:3603"));  // FBN1
 /// ```
+#[derive(Debug, Clone)]
 pub struct HasVariantInGene(pub String);
 impl HasVariantInGene {
     fn matches_gene_descr(&self, gd: &GeneDescriptor) -> bool {
@@ -69,14 +68,15 @@ impl Query<Phenopacket> for HasVariantInGene {
             .iter()
             .filter_map(|i| i.diagnosis.as_ref())
             .flat_map(|diagnosis| diagnosis.genomic_interpretations.iter())
-            .any(|gi| match &gi.call {
-                Some(Call::VariantInterpretation(vi)) => vi
-                    .variation_descriptor
-                    .as_ref()
-                    .and_then(|vd| vd.gene_context.as_ref())
-                    .is_some_and(|gd| self.matches_gene_descr(gd)),
-                Some(Call::Gene(gd)) => self.matches_gene_descr(gd),
-                None => false,
+            .any(|gi| {
+                if let Some(Call::VariantInterpretation(vi)) = &gi.call {
+                    vi.variation_descriptor
+                        .as_ref()
+                        .and_then(|vd| vd.gene_context.as_ref())
+                        .is_some_and(|gd| self.matches_gene_descr(gd))
+                } else {
+                    false
+                }
             })
     }
 }
@@ -221,10 +221,13 @@ mod test_queries {
     #[test]
     fn test_variant_in_gene() {
         let pp = testutils::example_phenopacket();
-        // let test_predicate_1 = HasVariantInGene(String::from("HGNC:0000135")); //TODO find passing test cases (vi, gd) in testdata
-        let test_predicate_2 = HasVariantInGene(String::from("HGNC:FOOOOOO"));
-        // assert!(test_predicate_1.test(&pp));
-        assert!(!test_predicate_2.test(&pp));
+        let test_col6a1 = HasVariantInGene(String::from("HGNC:2211"));
+        let test_nonsense_gene = HasVariantInGene(String::from("HGNC:FOOOOOO"));
+        assert!(
+            test_col6a1.test(&pp),
+            "variant interpretation concerning COL6A1 is contained in example pp and shoud be found."
+        );
+        assert!(!test_nonsense_gene.test(&pp));
     }
 
     #[test]

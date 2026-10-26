@@ -197,7 +197,6 @@ where
 #[cfg(test)]
 mod test_queries {
     use crate::{
-        phenopacket::fs::testutils,
         query::{
             Query,
             phenopacket::{
@@ -205,6 +204,7 @@ mod test_queries {
                 IsUnknownStatus,
             },
         },
+        testutils,
     };
     use ontolius::TermId;
     use phenopackets::schema::v2::core::{Sex, vital_status::Status};

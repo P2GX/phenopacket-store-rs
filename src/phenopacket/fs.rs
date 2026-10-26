@@ -203,41 +203,10 @@ fn replace_phenopacket(phenopacket: &Phenopacket, path: &Path) -> Result<bool, P
 // TESTS
 //
 #[cfg(test)]
-pub(crate) mod testutils {
-    use std::{fs, path::Path};
-    use tempfile;
-
-    use super::*;
-
-    /// get a temporary copy of the provided file. the copy will be deleted once the filehandle is dropped.
-    pub fn tmpfilecopy_from(path: &str) -> std::io::Result<tempfile::NamedTempFile> {
-        let tmpfile = tempfile::NamedTempFile::new()?;
-        fs::copy(Path::new(path), tmpfile.path())?;
-
-        Ok(tmpfile)
-    }
-
-    /// create a new example phenopacket from data/phenopacket.pb
-    pub fn example_phenopacket() -> Phenopacket {
-        read_phenopacket(Path::new("data/phenopacket.pb"))
-            .expect("Test phenopacket should be present in the repo")
-            .expect("Test phenopacket should be present in the repo")
-    }
-
-    /// create an empty example store in a temporary directory
-    /// the TempDir needs to be returned and kept alive a long as you want to use the store, otherwise the dir is removed.
-    pub fn example_store_empty() -> FilePhenoStore<tempfile::TempDir> {
-        let temp_dir =
-            tempfile::TempDir::new().expect("It is possible to create a temporary folder");
-        FilePhenoStore::new(temp_dir).expect("We just created a temporary folder and it exists")
-    }
-}
-
-#[cfg(test)]
 mod test_core {
+    use super::*;
+    use crate::testutils;
     use std::path::Path;
-
-    use super::{testutils::example_phenopacket, *};
 
     #[test]
     fn test_read_phenopacket() {
@@ -251,7 +220,7 @@ mod test_core {
 
     #[test]
     fn test_read_create_phenopacket() -> Result<(), PhenoStoreError> {
-        let pp = example_phenopacket();
+        let pp = testutils::example_phenopacket();
 
         // write
         let outfile = tempfile::NamedTempFile::new()?;
@@ -292,7 +261,7 @@ mod test_core {
     fn test_update_phenopacket() -> Result<(), PhenoStoreError> {
         let pp_path = "data/phenopacket.pb";
         let file = testutils::tmpfilecopy_from(pp_path)?;
-        let mut pp = example_phenopacket();
+        let mut pp = testutils::example_phenopacket();
 
         // change some values
         pp.id = "a new id".into();
@@ -302,7 +271,7 @@ mod test_core {
 
         // verify
         assert!(file.path().exists());
-        let pp_orig = example_phenopacket();
+        let pp_orig = testutils::example_phenopacket();
         let pp_updated = read_phenopacket(file.path())
             .expect("The phenopacket was written")
             .expect("The phenopacket was written");
@@ -318,8 +287,8 @@ mod test_core {
 // FilePhenoStore
 #[cfg(test)]
 mod test_file_pheno_store {
-
-    use super::{testutils::example_phenopacket, *};
+    use super::*;
+    use crate::testutils;
     use std::{assert_matches, fs};
 
     #[test]
@@ -342,7 +311,7 @@ mod test_file_pheno_store {
     fn test_add() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = tempfile::TempDir::new()?;
         let ps = FilePhenoStore::new(temp_dir.path())?;
-        let pp = example_phenopacket();
+        let pp = testutils::example_phenopacket();
         let id = ps.add(&pp)?;
 
         // is ps dir non empty now?
@@ -358,10 +327,10 @@ mod test_file_pheno_store {
     /// depends on add()
     fn test_remove() -> Result<(), Box<dyn std::error::Error>> {
         // setup
-        let ps = testutils::example_store_empty();
+        let ps = testutils::example_filephenostore();
 
         // successfully remove a stored phenopacket
-        let pp = example_phenopacket();
+        let pp = testutils::example_phenopacket();
         let id = ps
             .add(&pp)
             .expect("There is plenty space for storing a phenopacket");
@@ -391,7 +360,7 @@ mod test_file_pheno_store {
         let ps = FilePhenoStore::new(temp_dir.path())?;
 
         // successfully get a stored phenopacket
-        let pp = example_phenopacket();
+        let pp = testutils::example_phenopacket();
         let id = ps.add(&pp)?;
         let test_exists = ps.get(&id);
         assert_matches!(test_exists, Ok(Some(_)));
@@ -417,14 +386,14 @@ mod test_file_pheno_store {
 
     #[test]
     fn test_len() -> Result<(), PhenoStoreError> {
-        let ps = testutils::example_store_empty();
+        let ps = testutils::example_filephenostore();
         let len0 = ps.len()?;
 
-        let pp1 = example_phenopacket();
+        let pp1 = testutils::example_phenopacket();
         let _ = ps.add(&pp1)?;
         let len1 = ps.len()?;
 
-        let pp2 = example_phenopacket();
+        let pp2 = testutils::example_phenopacket();
         let _ = ps.add(&pp2)?;
         let len2 = ps.len()?;
 

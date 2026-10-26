@@ -16,9 +16,9 @@ pub(crate) fn tmpfilecopy_from(path: &str) -> std::io::Result<tempfile::NamedTem
 
 /// parse the example phenopacket stored in the repo
 pub(crate) fn example_phenopacket() -> Phenopacket {
-    const BYTES: &[u8] =
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/phenopacket.pb"));
-    Phenopacket::decode(BYTES).expect("data/phenopacket.pb should be a valid phenopacket")
+    let path = "data/phenopacket.pb";
+    let buf = std::fs::read(path).expect("The resource file is in the repository");
+    Phenopacket::decode(&buf[..]).expect("data/phenopacket.pb should be a valid phenopacket")
 }
 
 /// create an empty store in a temporary directory.

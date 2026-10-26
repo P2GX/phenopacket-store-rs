@@ -211,8 +211,6 @@ mod test_queries {
 
     #[test]
     fn test_diagnosed_with() {
-        // TODO: create a `cfg(test)` (see an example at https://github.com/ielis/ontolius/blob/fe10ac2e3a22e6e3c5482a19c91825ba8045b0dc/src/lib.rs#L11)
-        // or create module-scoped test util modules instead of using the `testutil` module belonging to another functionality.
         let pp = testutils::example_phenopacket();
         let has_pfeiffer_syndrom = DiagnosedWith(String::from("OMIM:101600"));
         let has_foo = DiagnosedWith(String::from("OMIM:FOOOOOO"));

@@ -83,7 +83,25 @@ impl Query<Phenopacket> for HasVariantInGene {
 
 /// does the subject have the specified vital [`Status`]?
 #[derive(Debug, Clone)]
-struct HasVitalStatus(Status);
+pub struct HasVitalStatus(Status);
+
+impl HasVitalStatus {
+    /// Test if the phenopacket represents a living individual.
+    pub fn is_alive() -> Self {
+        Self(Status::Alive)
+    }
+
+    /// Test if the phenopacket represents a deceased individual.
+    pub fn is_deceased() -> Self {
+        Self(Status::Deceased)
+    }
+
+    /// Test if no vital status is indicated by the phenopacket.
+    pub fn has_unknown_vital_status() -> Self {
+        Self(Status::UnknownStatus)
+    }
+}
+
 impl_bool_algebra!(HasVitalStatus);
 impl Query<Phenopacket> for HasVitalStatus {
     fn test(&self, item: &Phenopacket) -> bool {
@@ -96,41 +114,29 @@ impl Query<Phenopacket> for HasVitalStatus {
     }
 }
 
-/// is the subject alive?
+/// Test if the phenopacket represents an individual with specified sex.
 #[derive(Debug, Clone)]
-pub struct IsAlive;
-impl_bool_algebra!(IsAlive);
-impl Query<Phenopacket> for IsAlive {
-    fn test(&self, item: &Phenopacket) -> bool {
-        HasVitalStatus(Status::Alive).test(item)
+pub struct HasSex(Sex);
+impl HasSex {
+    pub fn is_male() -> Self {
+        HasSex(Sex::Male)
+    }
+
+    pub fn is_female() -> Self {
+        HasSex(Sex::Female)
+    }
+
+    pub fn has_unknown_sex() -> Self {
+        HasSex(Sex::UnknownSex)
+    }
+
+    pub fn has_other_sex() -> Self {
+        HasSex(Sex::OtherSex)
     }
 }
 
-/// is the subject deceased?
-#[derive(Debug, Clone)]
-pub struct IsDeceased;
-impl_bool_algebra!(IsDeceased);
-impl Query<Phenopacket> for IsDeceased {
-    fn test(&self, item: &Phenopacket) -> bool {
-        HasVitalStatus(Status::Deceased).test(item)
-    }
-}
-
-/// is the subjects vital staus unknown?
-#[derive(Debug, Clone)]
-pub struct IsUnknownStatus;
-impl_bool_algebra!(IsUnknownStatus);
-impl Query<Phenopacket> for IsUnknownStatus {
-    fn test(&self, item: &Phenopacket) -> bool {
-        HasVitalStatus(Status::UnknownStatus).test(item)
-    }
-}
-
-/// does the phenopacket have the specified [`Sex`]?
-#[derive(Debug, Clone)]
-pub struct IsSex(Sex);
-impl_bool_algebra!(IsSex);
-impl Query<Phenopacket> for IsSex {
+impl_bool_algebra!(HasSex);
+impl Query<Phenopacket> for HasSex {
     fn test(&self, item: &Phenopacket) -> bool {
         item.subject
             .as_ref()
@@ -139,18 +145,23 @@ impl Query<Phenopacket> for IsSex {
     }
 }
 
-/// is the phenopacket annotated with the specified `hpo_term` (included or excluded)?
+/// Test if the phenopacket is annotated to an HPO `query` in given observation state (present or excluded).
+///
+/// The phenopacket must contain no logical contradictions, such as term in both present and excluded observation states
+/// or a present term and its excluded ancestor.
+///
+/// The query does *not* take temporal aspects into the account!
 ///
 /// # Fields
-/// term_id - ([`TermId`]) - the id of the term you want to query
-/// excluded - (`bool`) - is the term excluded in this phenopacket?
-/// taxonomy - the taxonomy the term is from / the phenopacket uses. this will be used to check whether the term is implicitly included/excluded by ancestor/decendant terms.
+/// query - the query term id
+/// excluded - the observation state of the query (`false` for a present term and `true` for a term that was sought for but found to be absent)
+/// taxonomy - the taxonomy for navigating through ontology hierarchy.
 ///
 /// check [`ontolius`] docs on how to load a taxonomy.
 #[cfg(feature = "ontology-query")]
 #[derive(Debug, Clone)]
 pub struct HasPhenotypicFeature<T> {
-    pub term_id: ontolius::TermId,
+    pub query: ontolius::TermId,
     /// is this phenotypic feature *explicitly excluded*? for example because it was explicitly looked for, but found to be absent.
     pub excluded: bool,
     pub taxonomy: T,
@@ -165,29 +176,26 @@ where
     T: TaxonomyQuery,
 {
     fn test(&self, item: &Phenopacket) -> bool {
-        item.phenotypic_features.iter().any(|current_pf| {
-            if let Some(item_term_id) = current_pf
-                .r#type
-                .as_ref()
-                .and_then(|t| t.id.parse::<TermId>().ok())
-            {
-                let term_matches = item_term_id == self.term_id;
-                if !self.excluded {
-                    // is the queried term (implicitly or explicitly) INCLUDED through the current term?
-                    let current_is_decendant_of_query =
-                        self.taxonomy.is_descendant_of(&item_term_id, &self.term_id);
-                    (term_matches || current_is_decendant_of_query) && !current_pf.excluded
+        item.phenotypic_features
+            .iter()
+            .filter(|pf| pf.excluded == self.excluded)
+            .any(|current_pf| {
+                if let Some(item_term_id) = current_pf
+                    .r#type
+                    .as_ref()
+                    .and_then(|t| t.id.parse::<TermId>().ok())
+                {
+                    if !self.excluded {
+                        self.taxonomy
+                            .is_equal_or_ancestor_of(&self.query, &item_term_id)
+                    } else {
+                        self.taxonomy
+                            .is_equal_or_ancestor_of(&item_term_id, &self.query)
+                    }
                 } else {
-                    // is the queried term (implicitly or explicitly) EXCLUDED through the current term?
-                    let current_is_ancestor_of_query =
-                        self.taxonomy.is_ancestor_of(&item_term_id, &self.term_id);
-                    (term_matches || current_is_ancestor_of_query) && current_pf.excluded
+                    false
                 }
-            } else {
-                // we cannot make a statement about this current term.
-                false
-            }
-        })
+            })
     }
 }
 
@@ -199,15 +207,11 @@ mod test_queries {
     use crate::{
         query::{
             Query,
-            phenopacket::{
-                DiagnosedWith, HasVariantInGene, HasVitalStatus, IsAlive, IsDeceased, IsSex,
-                IsUnknownStatus,
-            },
+            phenopacket::{DiagnosedWith, HasSex, HasVariantInGene, HasVitalStatus},
         },
         testutils,
     };
     use ontolius::TermId;
-    use phenopackets::schema::v2::core::{Sex, vital_status::Status};
 
     #[test]
     fn test_diagnosed_with() {
@@ -233,9 +237,9 @@ mod test_queries {
     #[test]
     fn test_vital_status() {
         let pp = testutils::example_phenopacket();
-        let alive = HasVitalStatus(Status::Alive);
-        let dead = HasVitalStatus(Status::Deceased);
-        let unknown_vital_status = HasVitalStatus(Status::UnknownStatus);
+        let alive = HasVitalStatus::is_alive();
+        let dead = HasVitalStatus::is_deceased();
+        let unknown_vital_status = HasVitalStatus::has_unknown_vital_status();
 
         assert!(
             !(dead | alive).test(&pp),
@@ -245,11 +249,6 @@ mod test_queries {
             unknown_vital_status.test(&pp),
             "The test phenopacket has no vital status annotated."
         );
-
-        // test convenience wrappers
-        assert!(IsUnknownStatus.test(&pp));
-        assert!(!IsAlive.test(&pp));
-        assert!(!IsDeceased.test(&pp));
     }
 
     #[test]
@@ -257,11 +256,11 @@ mod test_queries {
         let pp = testutils::example_phenopacket();
 
         assert!(
-            IsSex(Sex::Male).test(&pp),
+            HasSex::is_male().test(&pp),
             "example phenopacket is annotated as MALE"
         );
         assert!(
-            !IsSex(Sex::OtherSex).test(&pp),
+            !HasSex::has_other_sex().test(&pp),
             "example phenopacket is annotated as MALE"
         );
     }
@@ -292,15 +291,15 @@ mod test_queries {
         // q_incl is an included term contained in the example phenopacket
         let q_incl: TermId = "HP:0001558".parse().unwrap(); // Decreased fetal movement
         // q_par is parent of q
-        let q_par: TermId = "HP:0001557".parse().unwrap(); // Prenatal movement abnormality 
+        let q_par: TermId = "HP:0001557".parse().unwrap(); // Prenatal movement abnormality
         // q_child is child of q
         let q_child: TermId = "HP:0001989".parse().unwrap(); // Fetal akinesia sequence
         // q_par2 is grandparent of q_par
-        let q_par2: TermId = "HP:0034057".parse().unwrap(); // Fetal anomaly 
+        let q_par2: TermId = "HP:0034057".parse().unwrap(); // Fetal anomaly
 
         assert!(
             HasPhenotypicFeature {
-                term_id: q_incl.clone(),
+                query: q_incl.clone(),
                 excluded: false,
                 taxonomy: &hpo
             }
@@ -309,7 +308,7 @@ mod test_queries {
         );
         assert!(
             HasPhenotypicFeature {
-                term_id: q_par.clone(),
+                query: q_par.clone(),
                 excluded: false,
                 taxonomy: &hpo
             }
@@ -318,7 +317,7 @@ mod test_queries {
         );
         assert!(
             !HasPhenotypicFeature {
-                term_id: q_child.clone(),
+                query: q_child.clone(),
                 excluded: false,
                 taxonomy: &hpo
             }
@@ -327,7 +326,7 @@ mod test_queries {
         );
         assert!(
             HasPhenotypicFeature {
-                term_id: q_par2.clone(),
+                query: q_par2.clone(),
                 excluded: false,
                 taxonomy: &hpo
             }
@@ -345,7 +344,7 @@ mod test_queries {
         let q_child: TermId = "HP:0006824".parse().unwrap(); // Cranial nerve paralysis
 
         let query = HasPhenotypicFeature {
-            term_id: q_excl.clone(),
+            query: q_excl.clone(),
             excluded: true,
             taxonomy: &hpo,
         };
@@ -357,7 +356,7 @@ mod test_queries {
         );
 
         let query = HasPhenotypicFeature {
-            term_id: q_par.clone(),
+            query: q_par.clone(),
             excluded: true,
             taxonomy: &hpo,
         };
@@ -367,7 +366,7 @@ mod test_queries {
         );
 
         let query = HasPhenotypicFeature {
-            term_id: q_child.clone(),
+            query: q_child.clone(),
             excluded: true,
             taxonomy: &hpo,
         };
@@ -378,7 +377,7 @@ mod test_queries {
 
         // test the exclusion
         let query = HasPhenotypicFeature {
-            term_id: q_excl.clone(),
+            query: q_excl.clone(),
             excluded: false,
             taxonomy: &hpo,
         };

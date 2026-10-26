@@ -1,5 +1,5 @@
 mod core;
 pub use core::{AndQuery, NotQuery, OrQuery, Query, impl_bool_algebra};
 
-/// Selection of convenient query structs
+/// A selection of convenient phenopacket queries.
 pub mod phenopacket;

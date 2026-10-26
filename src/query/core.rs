@@ -21,8 +21,8 @@
 /// impl_bool_algebra!(IsLowercase); // ➌
 /// ```
 ///
-/// The `Query` trait must be implemented (❶) such that `true` is returned if the `item` matches the condition,
-/// and `false` otherwise (➋).
+/// The `Query` trait must be implemented (❶) such that `true` is returned (➋) if the `item` matches the condition,
+/// and `false` otherwise.
 ///
 /// The [`impl_bool_algebra`] macro enables (➌) building complex queries from simple building blocks
 /// using the boolean algebra operators.
@@ -221,38 +221,40 @@ macro_rules! impl_bool_algebra {
 pub use impl_bool_algebra;
 
 #[cfg(test)]
-mod test_predicate {
+mod test_query {
     use super::Query;
 
     #[derive(Clone)]
-    pub struct Foo;
+    pub struct Foo(bool);
     impl<T> Query<T> for Foo {
         fn test(&self, _item: &T) -> bool {
-            false
+            self.0
         }
     }
     crate::impl_bool_algebra!(Foo);
 
     #[test]
     fn test_bool_algebra() {
-        let a = Foo;
-        let b = Foo;
-        let c = Foo;
+        let a = Foo(true);
+        let b = Foo(false);
+        let c = Foo(false);
         let val = 123u8;
 
+        let x = &a & &a;
+        assert!(x.test(&val));
         let x = &a & (&b & c);
         assert!(!x.test(&val));
 
         let y = &a | &b;
-        assert!(!y.test(&val));
+        assert!(y.test(&val));
 
-        let z = !&a;
+        let z = !&b;
         assert!(z.test(&val));
     }
 
     #[test]
     #[allow(dead_code)]
-    fn test_query_is_dyn_compatible() {
+    fn query_is_dyn_compatible() {
         fn bla<T>(_v: &dyn Query<T>) {}
     }
 }

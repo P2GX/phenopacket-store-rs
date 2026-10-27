@@ -41,11 +41,12 @@ HP:0011463Childhood onset*º
 NCIT:C3677Benign Neoplasmj&
 NCIT:C28076Disease Grade Qualifier‚ 
 NCIT:C68748HER2/Neu Positiveš
-EFO:0009655abnormal sample2™
-comprehensive-phenopacket-idw
+EFO:0009655abnormal sample2¯
+comprehensive-phenopacket-idŒ
  
-OMIM:101600PFEIFFER SYNDROMES
-14 year-old boy"><2
+OMIM:101600PFEIFFER SYNDROMEh
+14 year-old boy"SQ*
+	HGNC:2211COL6A12
 hgvsNM_001848.2:c.877G>Ar
 GENO:0000135heterozygous:D
  
@@ -53,11 +54,11 @@ NCIT:C3677Benign Neoplasmj&
 
 HP:0003577Congenital onsetRŸ
 file://data/genomes/P000001C
-14 year-old boyP000001C
-genomeAssembly
-GRCh38.p13
+14 year-old boyP000001C
 
-fileFormatvcf1
+fileFormatvcf
+genomeAssembly
+GRCh38.p131
 description"Whole genome sequencing VCF outputZÁ
 
 ¨ ì™ÀÄPeter R.PhenopacketLab"y

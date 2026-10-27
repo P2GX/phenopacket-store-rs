@@ -144,6 +144,10 @@
         "interpretationStatus": "CAUSATIVE",
         "variantInterpretation": {
           "variationDescriptor": {
+            "geneContext": {
+              "valueId": "HGNC:2211",
+              "symbol": "COL6A1"
+            },
             "expressions": [{
               "syntax": "hgvs",
               "value": "NM_001848.2:c.877G\u003eA"

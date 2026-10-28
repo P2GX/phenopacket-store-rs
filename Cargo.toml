@@ -31,3 +31,11 @@ name = "configure-phenostore"
 [[bench]]
 name = "filephenostore"
 harness = false
+
+[[bench]]
+name = "query-phenopacket"
+harness = false
+required-features = ["ontology-query"]
+
+[profile.bench]
+debug = true

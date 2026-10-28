@@ -10,12 +10,14 @@ use std::hint::black_box;
 use tempfile::TempDir;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("new", |b| {
+    let mut group = c.benchmark_group("FilePhenoStore");
+
+    group.bench_function("new", |b| {
         let temp_dir = tempfile::TempDir::new().unwrap();
         b.iter(|| FilePhenoStore::new(black_box(temp_dir.path())));
     });
 
-    c.bench_function("add", |b| {
+    group.bench_function("add", |b| {
         let ps = example_filephenostore();
         let pp = example_phenopacket();
 
@@ -25,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("get", |b| {
+    group.bench_function("get", |b| {
         let ps = example_filephenostore();
         let pp = example_phenopacket();
         let id = ps
@@ -38,7 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("update", |b| {
+    group.bench_function("update", |b| {
         let ps = example_filephenostore();
         let pp = example_phenopacket();
         let id = ps
@@ -51,11 +53,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("remove", |b| {
+    group.bench_function("remove", |b| {
         let ps = example_filephenostore();
         let pp = example_phenopacket();
 
-        // only the routine (second closure) is timed, the setup (first closure) is not.
         b.iter_batched(
             || {
                 ps.add(&pp)
@@ -74,12 +75,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
 
-    let mut group = c.benchmark_group("iter");
     for n in [10, 100, 1_000, 10_000] {
         let ps = filled_filephenostore(n);
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(n), &ps, |b, ps| {
-            // the iterator is lazy, so it has to be consumed to measure anything.
+        group.bench_with_input(BenchmarkId::new("iter", n), &ps, |b, ps| {
             b.iter(|| {
                 ps.iter_phenopackets()
                     .expect("should be able to read the store directory.")

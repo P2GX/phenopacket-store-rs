@@ -211,7 +211,6 @@ mod test_queries {
         },
         testutils,
     };
-    use ontolius::TermId;
 
     #[test]
     fn test_diagnosed_with() {
@@ -269,6 +268,7 @@ mod test_queries {
     #[test]
     fn test_has_phenotypic_feature() {
         use crate::query::phenopacket::HasPhenotypicFeature;
+        use ontolius::TermId;
         use ontolius::ontology::csr::MinimalCsrOntology;
 
         let pp = testutils::example_phenopacket();
@@ -372,7 +372,7 @@ mod test_queries {
         };
         assert!(
             query.test(&pp),
-            "exclusion of a term also excludes its descendants"
+            "exclusion of a term also excludes its descendants."
         );
 
         // test the exclusion
@@ -381,6 +381,6 @@ mod test_queries {
             excluded: false,
             taxonomy: &hpo,
         };
-        assert!(!query.test(&pp), "excluded term is not present");
+        assert!(!query.test(&pp), "excluded term should not be present.");
     }
 }

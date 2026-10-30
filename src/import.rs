@@ -9,7 +9,6 @@ use std::{
 
 use phenopackets::schema::v2::Phenopacket;
 use uuid::Uuid;
-use zip::{ZipArchive, result::ZipError};
 
 use crate::{
     cohort::{Cohort, CohortStore, CohortStoreError},
@@ -33,14 +32,13 @@ pub enum ItemErrorKind {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 /// reasons the import can fail.
 pub enum ImportError {
     /// unexpected issue trying to write to CohortStore
     CohortStore(CohortStoreError),
     /// upexpected issue trying to write to PhenoStore
     PhenoStore(PhenoStoreError),
-    /// could not read the archive
-    Zip(ZipError),
     /// the given path is invalid or unsupported
     InvalidInput,
     /// the release folder had an issue, for instance it might not match the expected layout
@@ -59,12 +57,6 @@ impl From<PhenoStoreError> for ImportError {
     }
 }
 
-impl From<ZipError> for ImportError {
-    fn from(error: ZipError) -> Self {
-        Self::Zip(error)
-    }
-}
-
 #[derive(Debug, Default)]
 /// A successful import might not have been successful for all items. This report gives insight into which items succeeded an which failed.
 pub struct ImportReport {
@@ -76,8 +68,8 @@ pub struct ImportReport {
 
 /// Import data from a [phenopacket-store release](https://github.com/monarch-initiative/phenopacket-store/releases) into a [`CohortStore`] and  [`PhenoStore`].
 ///
-/// The data must follow the folder structure RELEASE/COHORT/PHENOPACKET.json
-/// The release folder can be zipped or unzipped.
+/// The data must follow the folder structure `RELEASE/COHORT/PHENOPACKET.json`
+/// The release folder must be unzipped.
 ///
 /// # Returns
 /// - a report stating which of the found json files were successfully imported and which failed, along with their error.
@@ -95,8 +87,6 @@ where
 
     let items: Box<dyn Iterator<Item = Item>> = if from_path.is_dir() {
         Box::new(from_dir(from_path)?)
-    } else if from_path.extension().is_some_and(|ext| ext == "zip") {
-        Box::new(from_zip(from_path)?)
     } else {
         return Err(ImportError::InvalidInput);
     };
@@ -181,57 +171,12 @@ fn read_phenopacket(path: &Path) -> Result<Phenopacket, ItemError> {
     serde_json::from_reader(BufReader::new(file)).map_err(|_| fail(ItemErrorKind::Parse))
 }
 
-/// create an [`Iterator`] from a zipped Phenopacket-store archive.
-fn from_zip(path: &Path) -> Result<impl Iterator<Item = Item>, ImportError> {
-    let file = File::open(path).map_err(|_| ImportError::InvalidInput)?;
-    let mut archive = ZipArchive::new(file)?;
-
-    Ok((0..archive.len()).filter_map(move |i| {
-        let entry = match archive.by_index(i) {
-            Ok(entry) => entry,
-            Err(_) => {
-                return Some(Err(ItemError {
-                    source: format!("{}#{i}", path.display()),
-                    kind: ItemErrorKind::Read,
-                }));
-            }
-        };
-        let Ok(source) = entry.name().map(|name| name.into_owned()) else {
-            return Some(Err(ItemError {
-                source: format!("{}#{i}", path.display()),
-                kind: ItemErrorKind::Read,
-            }));
-        };
-        if !entry.is_file() || !source.ends_with(".json") {
-            return None;
-        }
-
-        // release/COHORT/PHENOPACKET.json -> COHORT
-        let Some(cohort) = Path::new(&source).parent().and_then(Path::file_name) else {
-            return Some(Err(ItemError {
-                source: source.clone(),
-                kind: ItemErrorKind::WrongLayout,
-            }));
-        };
-        let cohort = cohort.to_string_lossy().into_owned();
-
-        Some(
-            serde_json::from_reader(BufReader::new(entry))
-                .map(|pp| (cohort, pp))
-                .map_err(|_| ItemError {
-                    source: source.clone(),
-                    kind: ItemErrorKind::Parse,
-                }),
-        )
-    }))
-}
-
 #[cfg(test)]
 mod test_import {
     use std::collections::HashSet;
     use std::path::Path;
 
-    use crate::import::{ImportError, Item, from_dir, from_zip};
+    use crate::import::{ImportError, Item, from_dir};
 
     // test data properties
     //-------------------------------------------------------------------------
@@ -250,12 +195,6 @@ mod test_import {
         assert_phenopacket_store_iterator(from_dir(Path::new("data/0.1.27_excerpt")));
     }
 
-    #[test]
-    fn test_from_zip() {
-        assert_phenopacket_store_iterator(from_zip(Path::new(
-            "data/phenopacket-store_excerpt.zip",
-        )));
-    }
 
     fn assert_phenopacket_store_iterator(it: Result<impl Iterator<Item = Item>, ImportError>) {
         let items: Vec<_> = it.expect("iterator creation failed.").collect();

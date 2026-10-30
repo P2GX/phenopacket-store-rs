@@ -20,7 +20,6 @@ const N_COHORTS: usize = 3;
 #[parameterized(
     import_path = {
         "data/0.1.27_excerpt",
-        "data/phenopacket-store_excerpt.zip",
     }
 )]
 fn test_import_to_stores(import_path: &str) {

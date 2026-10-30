@@ -233,8 +233,17 @@ mod test_import {
 
     use crate::import::{ImportError, Item, from_dir, from_zip};
 
-    // properties about the test data (subset of phenopacket store)
+    // test data properties
+    //-------------------------------------------------------------------------
+    // total number of phenopackets
     const N_PHENOPACKETS: usize = 13;
+    // total number of invalid files
+    const N_INVALID_JSON: usize = 1;
+    // total number of json files
+    const N_JSON: usize = N_PHENOPACKETS + N_INVALID_JSON;
+    // total number of cohorts
+    const N_COHORTS: usize = 3;
+    //-------------------------------------------------------------------------
 
     #[test]
     fn test_from_dir() {
@@ -252,12 +261,18 @@ mod test_import {
         let items: Vec<_> = it.expect("iterator creation failed.").collect();
         assert_eq!(
             items.len(),
-            N_PHENOPACKETS,
-            "example should contain 13 phenopackets."
+            N_JSON,
+            "example should contain expected number of json files (valid and invalid)."
         );
-        assert!(
-            items.iter().all(|x| x.is_ok()),
-            "example phenopackets are all valid and should be readable without issues."
+        assert_eq!(
+            items.iter().filter(|x| x.is_ok()).count(),
+            N_PHENOPACKETS,
+            "valid example phenopackets should be readable without issues."
+        );
+        assert_eq!(
+            items.iter().filter(|x| x.is_err()).count(),
+            N_INVALID_JSON,
+            "invalid example phenopackets should be caught as items."
         );
 
         let cohort_names: HashSet<&str> = items
@@ -267,8 +282,8 @@ mod test_import {
             .collect();
         assert_eq!(
             cohort_names.len(),
-            3,
-            "example should contain 3 distinct cohorts."
+            N_COHORTS,
+            "example should contain expected number of distinct cohorts."
         );
     }
 }

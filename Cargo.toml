@@ -22,7 +22,7 @@ tempfile = "3"
 ontolius = {version = "0.8.2"}
 
 [features]
-ontology-query = ["dep:ontolius"]
+ontolius = ["dep:ontolius"]
 
 [[example]]
 name = "configure-phenostore"

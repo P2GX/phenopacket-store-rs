@@ -195,7 +195,6 @@ mod test_import {
         assert_phenopacket_store_iterator(from_dir(Path::new("data/0.1.27_excerpt")));
     }
 
-
     fn assert_phenopacket_store_iterator(it: Result<impl Iterator<Item = Item>, ImportError>) {
         let items: Vec<_> = it.expect("iterator creation failed.").collect();
         assert_eq!(

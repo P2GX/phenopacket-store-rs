@@ -211,7 +211,6 @@ mod test_queries {
         },
         testutils,
     };
-    use ontolius::TermId;
 
     #[test]
     fn test_diagnosed_with() {
@@ -269,6 +268,7 @@ mod test_queries {
     #[test]
     fn test_has_phenotypic_feature() {
         use crate::query::phenopacket::HasPhenotypicFeature;
+        use ontolius::TermId;
         use ontolius::ontology::csr::MinimalCsrOntology;
 
         let pp = testutils::example_phenopacket();

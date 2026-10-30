@@ -1,5 +1,5 @@
 //! # Feature Flags
-//! 
+//!
 //! - `ontolius`: Enables `query::phenopackets::HasPhenotypicFeature`, which allows to query for phenotypic features that are not explicitly included, but implied by another –included– term and the ontology used.
 
 /// Routines for creating, updating and persisting phenopacket cohorts.

@@ -211,7 +211,7 @@ mod test_core {
     #[test]
     fn test_read_phenopacket() {
         let path = Path::new("data/phenopacket.pb");
-        let pp = read_phenopacket(&path);
+        let pp = read_phenopacket(path);
 
         let pp = pp.expect("The phenopacket file should be well formatted");
         let pp = pp.expect("The phenopacket file should be present in the repo");

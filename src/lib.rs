@@ -1,5 +1,8 @@
 /// Routines for creating, updating and persisting phenopacket cohorts.
 pub mod cohort;
+/// Import phenopackets from phenopackets-store.
+#[cfg(feature = "import")]
+pub mod import;
 /// Phenopacket persistence backends.
 pub mod phenopacket;
 /// Queries for filtering Phenopacket Schema elements.

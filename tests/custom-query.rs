@@ -14,7 +14,7 @@ impl_bool_algebra!(IsLowercase);
 struct StartsWith<'a>(&'a str);
 impl<'a> Query<str> for StartsWith<'a> {
     fn test(&self, item: &str) -> bool {
-        item.starts_with(&self.0)
+        item.starts_with(self.0)
     }
 }
 impl_bool_algebra!(StartsWith<'a>);

@@ -6,9 +6,9 @@ use phenopackets::{
     },
 };
 
-#[cfg(feature = "ontology-query")]
+#[cfg(feature = "ontolius")]
 use ontolius::TermId;
-#[cfg(feature = "ontology-query")]
+#[cfg(feature = "ontolius")]
 use ontolius::ontology::TaxonomyQuery;
 
 use crate::{impl_bool_algebra, query::Query};
@@ -158,7 +158,7 @@ impl Query<Phenopacket> for HasSex {
 /// taxonomy - the taxonomy for navigating through ontology hierarchy.
 ///
 /// check [`ontolius`] docs on how to load a taxonomy.
-#[cfg(feature = "ontology-query")]
+#[cfg(feature = "ontolius")]
 #[derive(Debug, Clone)]
 pub struct HasPhenotypicFeature<T> {
     pub query: ontolius::TermId,
@@ -167,10 +167,10 @@ pub struct HasPhenotypicFeature<T> {
     pub taxonomy: T,
 }
 
-#[cfg(feature = "ontology-query")]
+#[cfg(feature = "ontolius")]
 impl_bool_algebra!(HasPhenotypicFeature<T>);
 
-#[cfg(feature = "ontology-query")]
+#[cfg(feature = "ontolius")]
 impl<T> Query<Phenopacket> for HasPhenotypicFeature<T>
 where
     T: TaxonomyQuery,
@@ -211,7 +211,6 @@ mod test_queries {
         },
         testutils,
     };
-    use ontolius::TermId;
 
     #[test]
     fn test_diagnosed_with() {
@@ -265,10 +264,11 @@ mod test_queries {
         );
     }
 
-    #[cfg(feature = "ontology-query")]
+    #[cfg(feature = "ontolius")]
     #[test]
     fn test_has_phenotypic_feature() {
         use crate::query::phenopacket::HasPhenotypicFeature;
+        use ontolius::TermId;
         use ontolius::ontology::csr::MinimalCsrOntology;
 
         let pp = testutils::example_phenopacket();

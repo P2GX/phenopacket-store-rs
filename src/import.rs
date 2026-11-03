@@ -31,16 +31,16 @@ pub enum ItemErrorKind {
     WrongLayout,
 }
 
+/// reasons the import can fail.
 #[derive(Debug)]
 #[non_exhaustive]
-/// reasons the import can fail.
 pub enum ImportError {
     /// unexpected issue trying to write to CohortStore
     CohortStore(CohortStoreError),
-    /// upexpected issue trying to write to PhenoStore
+    /// unexpected issue trying to write to PhenoStore
     PhenoStore(PhenoStoreError),
     /// the given path is invalid or unsupported
-    InvalidInput,
+    InvalidInput(String),
     /// the release folder had an issue, for instance it might not match the expected layout
     InvalidData,
 }
@@ -57,8 +57,8 @@ impl From<PhenoStoreError> for ImportError {
     }
 }
 
-#[derive(Debug, Default)]
 /// A successful import might not have been successful for all items. This report gives insight into which items succeeded an which failed.
+#[derive(Debug, Default)]
 pub struct ImportReport {
     /// successfully imported items as tuples (CohortStore ID, PhenoStore ID).
     pub imported: Vec<(Uuid, Uuid)>,
@@ -88,7 +88,7 @@ where
     let items: Box<dyn Iterator<Item = Item>> = if from_path.is_dir() {
         Box::new(from_dir(from_path)?)
     } else {
-        return Err(ImportError::InvalidInput);
+        return Err(ImportError::InvalidInput(format!("Given path is not a dir: {from_path:?}")));
     };
     let mut report = ImportReport::default();
 
@@ -120,7 +120,7 @@ where
 
 /// create an iterator over [`Item`]s from an unzipped directory `dir`
 fn from_dir(dir: &Path) -> Result<impl Iterator<Item = Item>, ImportError> {
-    let cohorts = dir.read_dir().map_err(|_| ImportError::InvalidInput)?;
+    let cohorts = dir.read_dir().map_err(|e| ImportError::InvalidInput(format!("Could not read directory '{dir:?}' due to: {e}")))?;
     let read_err = |p: &Path| ItemError {
         source: p.display().to_string(),
         kind: ItemErrorKind::Read,

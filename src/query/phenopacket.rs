@@ -8,7 +8,6 @@ use phenopackets::{
 
 use crate::{impl_bool_algebra, query::Query};
 
-#[derive(Debug, Clone)]
 /// check whether a patient is diagnosed with a certain disease.
 ///
 /// # Fields
@@ -23,6 +22,7 @@ use crate::{impl_bool_algebra, query::Query};
 ///
 /// let has_pfeiffer_syndrome = DiagnosedWith(String::from("OMIM:101600"));
 /// ```
+#[derive(Debug, Clone)]
 pub struct DiagnosedWith(pub String);
 impl_bool_algebra!(DiagnosedWith);
 impl Query<Phenopacket> for DiagnosedWith {

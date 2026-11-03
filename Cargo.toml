@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/P2GX/phenopacket-store-rs"
 keywords = ["phenopacket", "phenopackets", "ga4gh", "storage"]
 authors = ["Niclas Casimir Grote", "Daniel Danis"]
+exclude = ["data/", ".github/"]
 
 [dependencies]
 phenopackets = { version = "0.2.2-post2", features = ["serde"] }
@@ -20,6 +21,7 @@ ontolius = { version = "0.8.2", optional = true, default-features = false }
 parameterized = "2.1.0"
 tempfile = "3"
 ontolius = {version = "0.8.2", features = ["csr", "obographs"] }
+flate2 = "1.1.10"
 
 [features]
 ontolius = ["dep:ontolius"]

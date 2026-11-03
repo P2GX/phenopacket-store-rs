@@ -88,7 +88,9 @@ where
     let items: Box<dyn Iterator<Item = Item>> = if from_path.is_dir() {
         Box::new(from_dir(from_path)?)
     } else {
-        return Err(ImportError::InvalidInput(format!("Given path is not a dir: {from_path:?}")));
+        return Err(ImportError::InvalidInput(format!(
+            "Given path is not a dir: {from_path:?}"
+        )));
     };
     let mut report = ImportReport::default();
 
@@ -120,7 +122,9 @@ where
 
 /// create an iterator over [`Item`]s from an unzipped directory `dir`
 fn from_dir(dir: &Path) -> Result<impl Iterator<Item = Item>, ImportError> {
-    let cohorts = dir.read_dir().map_err(|e| ImportError::InvalidInput(format!("Could not read directory '{dir:?}' due to: {e}")))?;
+    let cohorts = dir.read_dir().map_err(|e| {
+        ImportError::InvalidInput(format!("Could not read directory '{dir:?}' due to: {e}"))
+    })?;
     let read_err = |p: &Path| ItemError {
         source: p.display().to_string(),
         kind: ItemErrorKind::Read,

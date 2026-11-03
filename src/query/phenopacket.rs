@@ -206,26 +206,28 @@ mod ontolius {
 
     #[cfg(test)]
     mod test_ontolius {
+        use std::fs::File;
+        use std::io::BufReader;
+        use std::path::Path;
+
         use crate::query::Query;
 
         use super::HasPhenotypicFeature;
-        use ontolius::TermId;
-        use ontolius::ontology::csr::MinimalCsrOntology;
+        use flate2::read::GzDecoder;
+        use ontolius::{TermId, io::OntologyLoaderBuilder, ontology::csr::MinimalCsrOntology};
 
         #[test]
         fn test_has_phenotypic_feature() {
             let pp = crate::testutils::example_phenopacket();
             let hpo: MinimalCsrOntology = {
-                use ontolius::io::OntologyLoaderBuilder;
-                use std::{fs::File, io::BufReader, path::Path};
-
-                let path = Path::new("data").join("hp.json");
+                let path = Path::new("data/hp.json.gz");
                 let loader = OntologyLoaderBuilder::new().obographs_parser().build();
-                let reader =
-                    BufReader::new(File::open(path).expect("setup: failed to open ontology file."));
+                let reader = GzDecoder::new(BufReader::new(
+                    File::open(path).expect("setup: failed to open ontology file."),
+                ));
 
                 loader
-                    .load_from_buf_read(reader)
+                    .load_from_read(reader)
                     .expect("failed to load from reader.")
             };
 

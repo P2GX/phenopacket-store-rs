@@ -74,6 +74,7 @@ impl From<std::io::Error> for CohortStoreError {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Cohort {
+    pub id: String,
     pub description: String,
     pub members: Vec<Uuid>,
 }
@@ -81,6 +82,7 @@ pub struct Cohort {
 impl Cohort {
     pub fn new() -> Cohort {
         Cohort {
+            id: String::new(),
             description: String::new(),
             members: Vec::new(),
         }

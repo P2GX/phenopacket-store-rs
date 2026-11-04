@@ -6,14 +6,8 @@ use phenopackets::{
     },
 };
 
-#[cfg(feature = "ontology-query")]
-use ontolius::TermId;
-#[cfg(feature = "ontology-query")]
-use ontolius::ontology::TaxonomyQuery;
-
 use crate::{impl_bool_algebra, query::Query};
 
-#[derive(Debug, Clone)]
 /// check whether a patient is diagnosed with a certain disease.
 ///
 /// # Fields
@@ -28,6 +22,7 @@ use crate::{impl_bool_algebra, query::Query};
 ///
 /// let has_pfeiffer_syndrome = DiagnosedWith(String::from("OMIM:101600"));
 /// ```
+#[derive(Debug, Clone)]
 pub struct DiagnosedWith(pub String);
 impl_bool_algebra!(DiagnosedWith);
 impl Query<Phenopacket> for DiagnosedWith {
@@ -145,57 +140,194 @@ impl Query<Phenopacket> for HasSex {
     }
 }
 
-/// Test if the phenopacket is annotated to an HPO `query` in given observation state (present or excluded).
-///
-/// The phenopacket must contain no logical contradictions, such as term in both present and excluded observation states
-/// or a present term and its excluded ancestor.
-///
-/// The query does *not* take temporal aspects into the account!
-///
-/// # Fields
-/// query - the query term id
-/// excluded - the observation state of the query (`false` for a present term and `true` for a term that was sought for but found to be absent)
-/// taxonomy - the taxonomy for navigating through ontology hierarchy.
-///
-/// check [`ontolius`] docs on how to load a taxonomy.
-#[cfg(feature = "ontology-query")]
-#[derive(Debug, Clone)]
-pub struct HasPhenotypicFeature<T> {
-    pub query: ontolius::TermId,
-    /// is this phenotypic feature *explicitly excluded*? for example because it was explicitly looked for, but found to be absent.
-    pub excluded: bool,
-    pub taxonomy: T,
-}
+#[cfg(feature = "ontolius")]
+pub use ontolius::HasPhenotypicFeature;
 
-#[cfg(feature = "ontology-query")]
-impl_bool_algebra!(HasPhenotypicFeature<T>);
+#[cfg(feature = "ontolius")]
+mod ontolius {
 
-#[cfg(feature = "ontology-query")]
-impl<T> Query<Phenopacket> for HasPhenotypicFeature<T>
-where
-    T: TaxonomyQuery,
-{
-    fn test(&self, item: &Phenopacket) -> bool {
-        item.phenotypic_features
-            .iter()
-            .filter(|pf| pf.excluded == self.excluded)
-            .any(|current_pf| {
-                if let Some(item_term_id) = current_pf
-                    .r#type
-                    .as_ref()
-                    .and_then(|t| t.id.parse::<TermId>().ok())
-                {
-                    if !self.excluded {
-                        self.taxonomy
-                            .is_equal_or_ancestor_of(&self.query, &item_term_id)
+    use ontolius::TermId;
+    use ontolius::ontology::TaxonomyQuery;
+    use phenopackets::schema::v2::Phenopacket;
+
+    use crate::impl_bool_algebra;
+    use crate::query::Query;
+
+    /// Test if the phenopacket is annotated to an HPO `query` in given observation state (present or excluded).
+    ///
+    /// The phenopacket must contain no logical contradictions, such as term in both present and excluded observation states
+    /// or a present term and its excluded ancestor.
+    ///
+    /// The query does *not* take temporal aspects into the account!
+    ///
+    /// # Fields
+    /// query - the query term id
+    /// excluded - the observation state of the query (`false` for a present term and `true` for a term that was sought for but found to be absent)
+    /// taxonomy - the taxonomy for navigating through ontology hierarchy.
+    ///
+    /// check [`ontolius`] docs on how to load a taxonomy.
+    #[derive(Debug, Clone)]
+    pub struct HasPhenotypicFeature<T> {
+        pub query: ontolius::TermId,
+        /// is this phenotypic feature *explicitly excluded*? for example because it was explicitly looked for, but found to be absent.
+        pub excluded: bool,
+        pub taxonomy: T,
+    }
+
+    impl_bool_algebra!(HasPhenotypicFeature<T>);
+
+    impl<T> Query<Phenopacket> for HasPhenotypicFeature<T>
+    where
+        T: TaxonomyQuery,
+    {
+        fn test(&self, item: &Phenopacket) -> bool {
+            item.phenotypic_features
+                .iter()
+                .filter(|pf| pf.excluded == self.excluded)
+                .any(|current_pf| {
+                    if let Some(item_term_id) = current_pf
+                        .r#type
+                        .as_ref()
+                        .and_then(|t| t.id.parse::<TermId>().ok())
+                    {
+                        if !self.excluded {
+                            self.taxonomy
+                                .is_equal_or_ancestor_of(&self.query, &item_term_id)
+                        } else {
+                            self.taxonomy
+                                .is_equal_or_ancestor_of(&item_term_id, &self.query)
+                        }
                     } else {
-                        self.taxonomy
-                            .is_equal_or_ancestor_of(&item_term_id, &self.query)
+                        false
                     }
-                } else {
-                    false
+                })
+        }
+    }
+
+    #[cfg(test)]
+    mod test_ontolius {
+        use std::fs::File;
+        use std::io::BufReader;
+        use std::path::Path;
+
+        use crate::query::Query;
+
+        use super::HasPhenotypicFeature;
+        use flate2::read::GzDecoder;
+        use ontolius::{TermId, io::OntologyLoaderBuilder, ontology::csr::MinimalCsrOntology};
+
+        #[test]
+        fn test_has_phenotypic_feature() {
+            let pp = crate::testutils::example_phenopacket();
+            let hpo: MinimalCsrOntology = {
+                let path = Path::new("data/hp.json.gz");
+                let loader = OntologyLoaderBuilder::new().obographs_parser().build();
+                let reader = GzDecoder::new(BufReader::new(
+                    File::open(path).expect("setup: failed to open ontology file."),
+                ));
+
+                loader
+                    .load_from_read(reader)
+                    .expect("failed to load from reader.")
+            };
+
+            // test INCLUSION mechanics with ancestor / decendent terms
+            // q_par2 -> .. -> q_par -> q_incl -> q_child
+            // q_incl is an included term contained in the example phenopacket
+            let q_incl: TermId = "HP:0001558".parse().unwrap(); // Decreased fetal movement
+            // q_par is parent of q
+            let q_par: TermId = "HP:0001557".parse().unwrap(); // Prenatal movement abnormality
+            // q_child is child of q
+            let q_child: TermId = "HP:0001989".parse().unwrap(); // Fetal akinesia sequence
+            // q_par2 is grandparent of q_par
+            let q_par2: TermId = "HP:0034057".parse().unwrap(); // Fetal anomaly
+
+            assert!(
+                HasPhenotypicFeature {
+                    query: q_incl.clone(),
+                    excluded: false,
+                    taxonomy: &hpo
                 }
-            })
+                .test(&pp),
+                "inclusion query for exact matching terms should work."
+            );
+            assert!(
+                HasPhenotypicFeature {
+                    query: q_par.clone(),
+                    excluded: false,
+                    taxonomy: &hpo
+                }
+                .test(&pp),
+                "inclusion of a term also includes its parents."
+            );
+            assert!(
+                !HasPhenotypicFeature {
+                    query: q_child.clone(),
+                    excluded: false,
+                    taxonomy: &hpo
+                }
+                .test(&pp),
+                "inclusion of a term does NOT include its children."
+            );
+            assert!(
+                HasPhenotypicFeature {
+                    query: q_par2.clone(),
+                    excluded: false,
+                    taxonomy: &hpo
+                }
+                .test(&pp),
+                "inclusion of a term does include all of its ancestors."
+            );
+
+            // test EXCLUSION mechanics with ancestor / decendent terms
+            // q_par -> q_excl -> q_child
+            // q_excl is an excluded term contained in the example phenopacket
+            let q_excl: TermId = "HP:0031910".parse().unwrap(); // Abn. cranial nerve physiology
+            // q_par is parent of q_excl
+            let q_par: TermId = "HP:0012638".parse().unwrap(); // Abn. nervous system physiology
+            // q_child is child of q_excl
+            let q_child: TermId = "HP:0006824".parse().unwrap(); // Cranial nerve paralysis
+
+            let query = HasPhenotypicFeature {
+                query: q_excl.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            };
+            let x = query.test(&pp);
+            assert!(x);
+            assert!(
+                query.test(&pp),
+                "exclusion query for exact matching excluded term should work."
+            );
+
+            let query = HasPhenotypicFeature {
+                query: q_par.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            };
+            assert!(
+                !query.test(&pp),
+                "exclusion of a term does NOT exclude any of its ancestors."
+            );
+
+            let query = HasPhenotypicFeature {
+                query: q_child.clone(),
+                excluded: true,
+                taxonomy: &hpo,
+            };
+            assert!(
+                query.test(&pp),
+                "exclusion of a term also excludes its descendants"
+            );
+
+            // test the exclusion
+            let query = HasPhenotypicFeature {
+                query: q_excl.clone(),
+                excluded: false,
+                taxonomy: &hpo,
+            };
+            assert!(!query.test(&pp), "excluded term is not present");
+        }
     }
 }
 
@@ -262,125 +394,5 @@ mod test_queries {
             !HasSex::has_other_sex().test(&pp),
             "example phenopacket is annotated as MALE"
         );
-    }
-
-    #[cfg(feature = "ontology-query")]
-    #[test]
-    fn test_has_phenotypic_feature() {
-        use crate::query::phenopacket::HasPhenotypicFeature;
-        use ontolius::TermId;
-        use ontolius::ontology::csr::MinimalCsrOntology;
-
-        let pp = testutils::example_phenopacket();
-        let hpo: MinimalCsrOntology = {
-            use ontolius::io::OntologyLoaderBuilder;
-            use std::{fs::File, io::BufReader, path::Path};
-
-            let path = Path::new("data").join("hp.json");
-            let loader = OntologyLoaderBuilder::new().obographs_parser().build();
-            let reader =
-                BufReader::new(File::open(path).expect("setup: failed to open ontology file."));
-
-            loader
-                .load_from_buf_read(reader)
-                .expect("failed to load from reader.")
-        };
-
-        // test INCLUSION mechanics with ancestor / decendent terms
-        // q_par2 -> .. -> q_par -> q_incl -> q_child
-        // q_incl is an included term contained in the example phenopacket
-        let q_incl: TermId = "HP:0001558".parse().unwrap(); // Decreased fetal movement
-        // q_par is parent of q
-        let q_par: TermId = "HP:0001557".parse().unwrap(); // Prenatal movement abnormality
-        // q_child is child of q
-        let q_child: TermId = "HP:0001989".parse().unwrap(); // Fetal akinesia sequence
-        // q_par2 is grandparent of q_par
-        let q_par2: TermId = "HP:0034057".parse().unwrap(); // Fetal anomaly
-
-        assert!(
-            HasPhenotypicFeature {
-                query: q_incl.clone(),
-                excluded: false,
-                taxonomy: &hpo
-            }
-            .test(&pp),
-            "inclusion query for exact matching terms should work."
-        );
-        assert!(
-            HasPhenotypicFeature {
-                query: q_par.clone(),
-                excluded: false,
-                taxonomy: &hpo
-            }
-            .test(&pp),
-            "inclusion of a term also includes its parents."
-        );
-        assert!(
-            !HasPhenotypicFeature {
-                query: q_child.clone(),
-                excluded: false,
-                taxonomy: &hpo
-            }
-            .test(&pp),
-            "inclusion of a term does NOT include its children."
-        );
-        assert!(
-            HasPhenotypicFeature {
-                query: q_par2.clone(),
-                excluded: false,
-                taxonomy: &hpo
-            }
-            .test(&pp),
-            "inclusion of a term does include all of its ancestors."
-        );
-
-        // test EXCLUSION mechanics with ancestor / decendent terms
-        // q_par -> q_excl -> q_child
-        // q_excl is an excluded term contained in the example phenopacket
-        let q_excl: TermId = "HP:0031910".parse().unwrap(); // Abn. cranial nerve physiology
-        // q_par is parent of q_excl
-        let q_par: TermId = "HP:0012638".parse().unwrap(); // Abn. nervous system physiology
-        // q_child is child of q_excl
-        let q_child: TermId = "HP:0006824".parse().unwrap(); // Cranial nerve paralysis
-
-        let query = HasPhenotypicFeature {
-            query: q_excl.clone(),
-            excluded: true,
-            taxonomy: &hpo,
-        };
-        let x = query.test(&pp);
-        assert!(x);
-        assert!(
-            query.test(&pp),
-            "exclusion query for exact matching excluded term should work."
-        );
-
-        let query = HasPhenotypicFeature {
-            query: q_par.clone(),
-            excluded: true,
-            taxonomy: &hpo,
-        };
-        assert!(
-            !query.test(&pp),
-            "exclusion of a term does NOT exclude any of its ancestors."
-        );
-
-        let query = HasPhenotypicFeature {
-            query: q_child.clone(),
-            excluded: true,
-            taxonomy: &hpo,
-        };
-        assert!(
-            query.test(&pp),
-            "exclusion of a term also excludes its descendants."
-        );
-
-        // test the exclusion
-        let query = HasPhenotypicFeature {
-            query: q_excl.clone(),
-            excluded: false,
-            taxonomy: &hpo,
-        };
-        assert!(!query.test(&pp), "excluded term should not be present.");
     }
 }

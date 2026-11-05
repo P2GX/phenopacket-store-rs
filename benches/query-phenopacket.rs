@@ -62,27 +62,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| query.test(&pp));
     });
 
-    // overview_group.bench_function("HasPhenotypicFeature/best", |b| {
-    //     let q_observed: TermId = "HP:0001558".parse().unwrap(); // Decreased fetal movement
-    //     let query = ppquery::HasPhenotypicFeature {
-    //         query: q_observed,
-    //         excluded: false,
-    //         taxonomy: &hpo,
-    //     };
-
-    //     b.iter(|| query.test(&pp));
-    // });
-
-    // overview_group.bench_function("HasPhenotypicFeature/bad", |b| {
-    //     let q_not_observed: TermId = "HP:0001989".parse().unwrap(); // Fetal akinesia sequence
-    //     let query = ppquery::HasPhenotypicFeature {
-    //         query: q_not_observed,
-    //         excluded: false,
-    //         taxonomy: &hpo,
-    //     };
-
-    //     b.iter(|| query.test(&pp));
-    // });
     overview_group.finish();
 
     let mut phenotypic_feature_group = c.benchmark_group("HasPhenotypicFeature");

@@ -23,6 +23,7 @@ parameterized = "2.1.0"
 tempfile = "3"
 ontolius = {version = "0.8.2", features = ["csr", "obographs"] }
 flate2 = "1.1.10"
+pprof = { version = "0.15.0", features = ["flamegraph"] }
 
 [features]
 ontolius = ["dep:ontolius"]
@@ -37,7 +38,7 @@ harness = false
 [[bench]]
 name = "query-phenopacket"
 harness = false
-required-features = ["ontology-query"]
+required-features = ["ontolius"]
 
 [profile.bench]
 debug = true

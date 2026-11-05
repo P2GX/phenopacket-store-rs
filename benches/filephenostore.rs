@@ -9,6 +9,9 @@ use prost::Message;
 use std::hint::black_box;
 use tempfile::TempDir;
 
+mod common;
+use common::FlamegraphProfiler;
+
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("FilePhenoStore");
 
@@ -75,7 +78,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
     });
 
-    for n in [10, 100, 1_000, 10_000] {
+    for n in [0, 1] {
         let ps = filled_filephenostore(n);
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("iter", n), &ps, |b, ps| {
@@ -89,7 +92,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(FlamegraphProfiler::new(997));
+    targets = criterion_benchmark
+}
 criterion_main!(benches);
 
 //

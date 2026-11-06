@@ -2,6 +2,7 @@
 name = "ppktstore"
 version = "0.1.1-dev"
 edition = "2024"
+rust-version = "1.91.1"
 description = "A storage interface for Phenopackets."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/P2GX/phenopacket-store-rs"

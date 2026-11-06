@@ -10,6 +10,8 @@ use uuid::Uuid;
 use phenopackets::schema::v2::Phenopacket;
 use prost::Message;
 
+use crate::query::Query;
+
 use super::*;
 
 /// The reasons why creating of a [`FilePhenoStore`] can fail.
@@ -101,6 +103,42 @@ where
 
     pub fn is_empty(&self) -> Result<bool, PhenoStoreError> {
         Ok(self.ls().iter().len() == 0)
+    }
+
+    /// filter the phenopackets stored, using a [`Query<Phenopacket>`]
+    ///
+    /// # Examples
+    ///
+    /// the following snippet uses the [`FilePhenoStore::query`] method to filter a phenostore and collect the satisfying phenopackets into a Vec.
+    ///
+    /// ```
+    /// use phenopackets::schema::v2::Phenopacket;
+    /// use std::path::Path;
+    /// use ppktstore::phenopacket::{PhenoStore, fs::FilePhenoStore};
+    /// use ppktstore::query::Query;
+    ///
+    /// // gather phenopackets that satisfy the query into a Vec.
+    /// fn query_phenostore<Q, P>(store: FilePhenoStore<P>, query: Q) -> Vec<Phenopacket>
+    /// where
+    ///     Q: Query<Phenopacket>,
+    ///     P: AsRef<Path>,
+    /// {
+    ///     store.query(&query)
+    ///         .filter_map(|id| store.get(&id).ok().flatten())
+    ///         .collect()
+    /// }
+    /// ```
+    pub fn query<'a, Q>(&'a self, q: &Q) -> impl Iterator<Item = Uuid>
+    where
+        Q: Query<Phenopacket> + 'a,
+    {
+        self.iter_phenopackets().unwrap().filter(|id| {
+            if let Some(pp) = self.get(id).ok().flatten() {
+                q.test(&pp)
+            } else {
+                false
+            }
+        })
     }
 }
 
@@ -287,8 +325,10 @@ mod test_core {
 // FilePhenoStore
 #[cfg(test)]
 mod test_file_pheno_store {
+    use phenopackets::schema::v2::core::{Individual, Sex};
+
     use super::*;
-    use crate::testutils;
+    use crate::{impl_bool_algebra, testutils};
     use std::{assert_matches, fs};
 
     #[test]
@@ -424,5 +464,53 @@ mod test_file_pheno_store {
             uuid, test_inverse,
             "id->path and path->id should be inverse."
         )
+    }
+
+    #[test]
+    fn test_query() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let fps = FilePhenoStore::new(&dir)?;
+
+        let alice = fps.add(&Phenopacket {
+            id: "ALICE".to_string(),
+            ..Default::default()
+        })?;
+        let bob = fps.add(&Phenopacket {
+            id: "BOB".to_string(),
+            ..Default::default()
+        })?;
+        let brian = fps.add(&Phenopacket {
+            id: "BRIAN".to_string(),
+            ..Default::default()
+        })?;
+
+        // define a simple query
+        #[derive(Debug, Clone)]
+        struct IdStartsWith(String);
+        impl_bool_algebra!(IdStartsWith);
+        impl Query<Phenopacket> for IdStartsWith {
+            fn test(&self, item: &Phenopacket) -> bool {
+                item.id.starts_with(&self.0)
+            }
+        }
+
+        let startswith_a = IdStartsWith("A".into());
+        let startswith_b = IdStartsWith("B".into());
+        let startswith_c = IdStartsWith("C".into());
+
+        let a_res = fps.query(&startswith_a).collect::<Vec<_>>();
+        let b_res = fps.query(&startswith_b).collect::<Vec<_>>();
+        let c_res = fps.query(&startswith_c).collect::<Vec<_>>();
+
+        assert_eq!(a_res.len(), 1, "there should be only ALICE");
+        assert!(a_res.contains(&alice), "ALICE should be contained");
+
+        assert_eq!(b_res.len(), 2, "there should be BOB and BRIAN");
+        assert!(b_res.contains(&bob), "BOB should be contained");
+        assert!(b_res.contains(&brian), "BRIAN should be contained");
+
+        assert_eq!(c_res.len(), 0, "there should be noone");
+
+        Ok(())
     }
 }

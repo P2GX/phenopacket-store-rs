@@ -1,6 +1,9 @@
 use std::{fs, path::Path};
 
-use phenopackets::schema::v2::Phenopacket;
+use phenopackets::schema::v2::{
+    Phenopacket,
+    core::{Disease, Sex, vital_status::Status},
+};
 use prost::Message;
 use tempfile::TempDir;
 

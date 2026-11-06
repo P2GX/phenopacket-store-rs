@@ -325,10 +325,10 @@ mod test_core {
 // FilePhenoStore
 #[cfg(test)]
 mod test_file_pheno_store {
-    use phenopackets::schema::v2::core::{Individual, Sex};
+    use phenopackets::schema::v2::core::Sex;
 
     use super::*;
-    use crate::{impl_bool_algebra, testutils};
+    use crate::{query::phenopacket::HasSex, testutils};
     use std::{assert_matches, fs};
 
     #[test]
@@ -471,45 +471,22 @@ mod test_file_pheno_store {
         let dir = tempfile::tempdir()?;
         let fps = FilePhenoStore::new(&dir)?;
 
-        let alice = fps.add(&Phenopacket {
-            id: "ALICE".to_string(),
-            ..Default::default()
-        })?;
-        let bob = fps.add(&Phenopacket {
-            id: "BOB".to_string(),
-            ..Default::default()
-        })?;
-        let brian = fps.add(&Phenopacket {
-            id: "BRIAN".to_string(),
-            ..Default::default()
-        })?;
+        let alice = fps.add(&testutils::patient("ALICE", Sex::Female))?;
+        let bob = fps.add(&testutils::patient("BOB", Sex::Male))?;
+        let brian = fps.add(&testutils::patient("BRIAN", Sex::Male))?;
 
-        // define a simple query
-        #[derive(Debug, Clone)]
-        struct IdStartsWith(String);
-        impl_bool_algebra!(IdStartsWith);
-        impl Query<Phenopacket> for IdStartsWith {
-            fn test(&self, item: &Phenopacket) -> bool {
-                item.id.starts_with(&self.0)
-            }
-        }
+        let res_male = fps.query(&HasSex::is_male()).collect::<Vec<_>>();
+        let res_female = fps.query(&HasSex::is_female()).collect::<Vec<_>>();
+        let res_other = fps.query(&HasSex::has_other_sex()).collect::<Vec<_>>();
 
-        let startswith_a = IdStartsWith("A".into());
-        let startswith_b = IdStartsWith("B".into());
-        let startswith_c = IdStartsWith("C".into());
+        assert_eq!(res_female.len(), 1, "there should be only ALICE");
+        assert!(res_female.contains(&alice), "ALICE should be contained");
 
-        let a_res = fps.query(&startswith_a).collect::<Vec<_>>();
-        let b_res = fps.query(&startswith_b).collect::<Vec<_>>();
-        let c_res = fps.query(&startswith_c).collect::<Vec<_>>();
+        assert_eq!(res_male.len(), 2, "there should be BOB and BRIAN");
+        assert!(res_male.contains(&bob), "BOB should be contained");
+        assert!(res_male.contains(&brian), "BRIAN should be contained");
 
-        assert_eq!(a_res.len(), 1, "there should be only ALICE");
-        assert!(a_res.contains(&alice), "ALICE should be contained");
-
-        assert_eq!(b_res.len(), 2, "there should be BOB and BRIAN");
-        assert!(b_res.contains(&bob), "BOB should be contained");
-        assert!(b_res.contains(&brian), "BRIAN should be contained");
-
-        assert_eq!(c_res.len(), 0, "there should be noone");
+        assert_eq!(res_other.len(), 0, "there should be noone");
 
         Ok(())
     }

@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use phenopackets::schema::v2::{
     Phenopacket,
-    core::{Disease, Sex, vital_status::Status},
+    core::{Individual, Sex},
 };
 use prost::Message;
 use tempfile::TempDir;
@@ -22,6 +22,19 @@ pub(crate) fn example_phenopacket() -> Phenopacket {
     let path = "data/phenopacket.pb";
     let buf = std::fs::read(path).expect("The resource file is in the repository");
     Phenopacket::decode(&buf[..]).expect("data/phenopacket.pb should be a valid phenopacket")
+}
+
+/// create a small example [`Phenopacket`] from two properties.
+pub(crate) fn patient(id: &str, sex: Sex) -> Phenopacket {
+    Phenopacket {
+        id: id.into(),
+        subject: Some(Individual {
+            id: id.into(),
+            sex: sex as i32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }
 
 /// create an empty store in a temporary directory.

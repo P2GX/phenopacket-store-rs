@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pfeiffer_syndrome = "OMIM:101600";
     let alice_id = store.add(&patient("alice", Sex::Female, pfeiffer_syndrome))?;
     let bob_id = store.add(&patient("bob", Sex::Male, pfeiffer_syndrome))?;
-    let charline_id = store.add(&patient("charline", Sex::Unknown, pfeiffer_syndrome))?;
+    let charline_id = store.add(&patient("charline", Sex::UnknownSex, pfeiffer_syndrome))?;
 
     // remove a phenopacket from the store using its id
     store.remove(&charline_id)?;

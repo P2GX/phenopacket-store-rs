@@ -1,5 +1,5 @@
 
-# ppktstore-rs
+# phenopacket-store-rs
 
 [![Crates.io](https://img.shields.io/crates/v/ppktstore.svg)](https://crates.io/crates/ppktstore)
 [![docs.rs](https://img.shields.io/docsrs/ppktstore)](https://docs.rs/ppktstore)
@@ -10,23 +10,23 @@
 
 ---
 
-A Rust crate, providing an interface to store, organise and query [GA4GH Phenopackets](https://phenopacket-schema.readthedocs.io).
+A Rust crate, `ppktstore`, providing an interface to store, organise and query [GA4GH Phenopackets](https://phenopacket-schema.readthedocs.io).
 
 - **Store** phenopackets and cohorts behind small traits (`PhenoStore`, `CohortStore`), currently backed by files.
 - **Import** a [Phenopacket Store](https://github.com/monarch-initiative/phenopacket-store) release.
-- **Query** with composable building blocks. combinable via the boolean operators `&`, `|` and `!`.
+- **Query** the store to find the phenopackets of interest.
 
 This crate is pre-1.0, so the API may still change.
 
-## Quickstart
+## Usage
 
-Add `ppktstore` to your project, you will likely want `phenopackets` aswell.
+Add `ppktstore` to your project, you will likely want `phenopackets` as well.
 
 ```shell
 cargo add ppktstore phenopackets
 ```
 
-Creating a store and adding a phenopacket to it is one line each. In the following snippet, we create a `FilePhenoStore`, add three `Phenopacket`s to it, remove one, define a composed query and use it to filter our stored `Pheonpackets`.
+Creating a store and adding a phenopacket to it is one line each. In the following snippet, we create a `FilePhenoStore`, add three phenopackets to it, remove one, define a query and use it to filter the phenopackets.
 
 ```rust
 use phenopackets::schema::v2::{
@@ -41,26 +41,6 @@ use ppktstore::{
     },
 };
 
-/// a helper to create example phenopackets
-fn patient(id: &str, sex: Sex, disease: &str) -> Phenopacket {
-    Phenopacket {
-        id: id.into(),
-        subject: Some(Individual {
-            id: id.into(),
-            sex: sex as i32,
-            ..Default::default()
-        }),
-        diseases: vec![Disease {
-            term: Some(OntologyClass {
-                id: disease.into(),
-                label: String::new(),
-            }),
-            ..Default::default()
-        }],
-        ..Default::default()
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // a file store is a directory, a temporary one keeps the example self-contained.
@@ -69,9 +49,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Every stored phenopacket gets a UUID.
     let pfeiffer_syndrome = "OMIM:101600";
-    let alice_id = store.add(&patient("alice", Sex::Female, pfeiffer_syndrome))?;
-    let bob_id = store.add(&patient("bob", Sex::Male, pfeiffer_syndrome))?;
-    let charline_id = store.add(&patient("charline", Sex::UnknownSex, pfeiffer_syndrome))?;
+    let alice_id = store.add(&make_example_phenopacket("alice", Sex::Female, pfeiffer_syndrome))?;
+    let bob_id = store.add(&make_example_phenopacket("bob", Sex::Male, pfeiffer_syndrome))?;
+    let charline_id = store.add(&make_example_phenopacket("charline", Sex::UnknownSex, pfeiffer_syndrome))?;
 
     // remove a phenopacket from the store using its id
     store.remove(&charline_id)?;
@@ -89,6 +69,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "alice");
     Ok(())
+}
+
+/// a helper to create example phenopackets
+fn make_example_phenopacket(id: &str, sex: Sex, disease: &str) -> Phenopacket {
+    Phenopacket {
+        id: id.into(),
+        subject: Some(Individual {
+            id: id.into(),
+            sex: sex as i32,
+            ..Default::default()
+        }),
+        diseases: vec![Disease {
+            term: Some(OntologyClass {
+                id: disease.into(),
+                label: String::new(),
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
 }
 ```
 

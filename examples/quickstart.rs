@@ -15,26 +15,6 @@ use ppktstore::{
     },
 };
 
-/// helper function to create a small example [`Phenopacket`] from three properties.
-fn patient(id: &str, sex: Sex, disease: &str) -> Phenopacket {
-    Phenopacket {
-        id: id.into(),
-        subject: Some(Individual {
-            id: id.into(),
-            sex: sex as i32,
-            ..Default::default()
-        }),
-        diseases: vec![Disease {
-            term: Some(OntologyClass {
-                id: disease.into(),
-                label: String::new(),
-            }),
-            ..Default::default()
-        }],
-        ..Default::default()
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A store is a directory. Here, we use a temporary one so this example leaves nothing behind.
     let dir = tempfile::tempdir()?;
@@ -42,8 +22,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add: every phenopacket gets a UUID.
     let pfeiffer_syndrome = "OMIM:101600".to_string();
-    let alice = store.add(&patient("alice", Sex::Female, &pfeiffer_syndrome))?;
-    let bob = store.add(&patient("bob", Sex::Male, &pfeiffer_syndrome))?;
+    let alice = store.add(&make_minimal_phenopacket(
+        "alice",
+        Sex::Female,
+        &pfeiffer_syndrome,
+    ))?;
+    let bob = store.add(&make_minimal_phenopacket(
+        "bob",
+        Sex::Male,
+        &pfeiffer_syndrome,
+    ))?;
     println!("stored alice as {alice}");
     println!("stored bob as {bob}");
 
@@ -94,4 +82,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+/// helper function to create a small example [`Phenopacket`] from three properties.
+fn make_minimal_phenopacket(id: &str, sex: Sex, disease: &str) -> Phenopacket {
+    Phenopacket {
+        id: id.into(),
+        subject: Some(Individual {
+            id: id.into(),
+            sex: sex as i32,
+            ..Default::default()
+        }),
+        diseases: vec![Disease {
+            term: Some(OntologyClass {
+                id: disease.into(),
+                label: String::new(),
+            }),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
 }

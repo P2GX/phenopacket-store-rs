@@ -2,6 +2,7 @@
 name = "ppktstore"
 version = "0.1.1-dev"
 edition = "2024"
+rust-version = "1.91.1"
 description = "A storage interface for Phenopackets."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/P2GX/phenopacket-store-rs"
@@ -22,13 +23,13 @@ criterion = {version = "0.8.2", features = ["html_reports", "cargo_bench_support
 parameterized = "2.1.0"
 tempfile = "3"
 ontolius = {version = "0.8.2", features = ["csr", "obographs"] }
-flate2 = "1.1.10"
+flate2 = "1.1.11"
 
 [features]
 ontolius = ["dep:ontolius"]
 
 [[example]]
-name = "configure-phenostore"
+name = "quickstart"
 
 [[bench]]
 name = "filephenostore"

@@ -1,7 +1,6 @@
 //! Benchmark the `Query<Phenopacket>` examples in `crate::query::phenopacket`
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use flate2::read::GzDecoder;
 use ontolius::{TermId, ontology::csr::MinimalCsrOntology};
 use phenopackets::schema::v2::{
     Phenopacket,
@@ -12,9 +11,6 @@ use ppktstore::query::{
     phenopacket::{self as ppquery},
 };
 use prost::Message;
-
-mod common;
-use common::FlamegraphProfiler;
 
 fn criterion_benchmark(c: &mut Criterion) {
     // shared resources and convenience functions
@@ -94,7 +90,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
 
-    for n in [1, 10, 50] {
+    for n in [1, 10, 100] {
         let pp = example_phenopacket_nth_slender_finger(n);
         let query_slender_finger = observed("HP:0001238");
 
@@ -110,11 +106,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     phenotypic_feature_group.finish();
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default().with_profiler(FlamegraphProfiler::new(997));
-    targets = criterion_benchmark
-}
+criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 
 //
@@ -158,13 +150,11 @@ fn load_hpo() -> MinimalCsrOntology {
     use ontolius::io::OntologyLoaderBuilder;
     use std::{fs::File, io::BufReader, path::Path};
 
-    let path = Path::new("data").join("hp.json.gz");
+    let path = Path::new("data").join("hp.json");
     let loader = OntologyLoaderBuilder::new().obographs_parser().build();
-    let reader = GzDecoder::new(BufReader::new(
-        File::open(path).expect("setup: failed to open ontology file."),
-    ));
+    let reader = BufReader::new(File::open(path).expect("setup: failed to open ontology file."));
 
     loader
-        .load_from_read(reader)
+        .load_from_buf_read(reader)
         .expect("failed to load from reader.")
 }

@@ -8,12 +8,13 @@ use phenopackets::schema::v2::{
 };
 use ppktstore::{
     cohort::{Cohort, CohortStore, codec::JsonCohortCodec, fs::FileCohortStore},
-    phenopacket::{PhenoStore, fs::FilePhenoStore},
+    phenopacket::{PhenoStore, PhenoStoreError, fs::FilePhenoStore},
     query::{
         Query,
         phenopacket::{DiagnosedWith, HasSex},
     },
 };
+use uuid::Uuid;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A store is a directory. Here, we use a temporary one so this example leaves nothing behind.
@@ -46,17 +47,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query phenopackets using provided example query structs
     let query = DiagnosedWith(pfeiffer_syndrome) & !HasSex::is_male();
 
-    let hits: Vec<Phenopacket> = store
-        .iter_phenopackets()?
-        .filter_map(|id| store.get(&id).ok().flatten())
-        // a Query tests a single item, here a phenopacket
-        .filter(|pp| query.test(pp))
-        .collect();
+    let hits = query_phenostore(&store, &query)?;
 
     println!(
         "{} matches: {:?}",
         hits.len(),
-        hits.iter().map(|pp| &pp.id).collect::<Vec<_>>()
+        hits.iter().map(|(_id, pp)| &pp.id).collect::<Vec<_>>()
     );
 
     // Remove a phenopacket from the store.
@@ -82,6 +78,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+/// gather phenopackets that satisfy the [`Query`] from a [`PhenoStore`] into a Vec.
+fn query_phenostore<S, Q>(store: &S, query: &Q) -> Result<Vec<(Uuid, Phenopacket)>, PhenoStoreError>
+where
+    S: PhenoStore,
+    Q: Query<Phenopacket>,
+{
+    Ok(store
+        .iter_phenopackets()?
+        .filter_map(|id| {
+            if let Some(pp) = store.get(&id).ok().flatten() {
+                if query.test(&pp) {
+                    Some((id, pp))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect())
 }
 
 /// helper function to create a small example [`Phenopacket`] from three properties.
